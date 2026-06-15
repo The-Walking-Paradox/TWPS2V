@@ -637,13 +637,50 @@ const PLATE_SRC = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAQDAw
   }
 
   // ---------- Download ----------
-  $('download').addEventListener('click',()=>{
+  function isMobile(){ return window.matchMedia('(max-width:860px)').matches; }
+
+  $('download').addEventListener('click',async ()=>{
+    const btn=$('download'); const orig=btn.textContent;
     const wasSafe=S.safe; S.safe=false; render();
-    const url=cv.toDataURL('image/png');
-    const a=document.createElement('a');
-    a.download='walking-paradox-'+S.fmt.replace(':','x')+'-'+Date.now()+'.png';
-    a.href=url; a.click();
+
+    const fname='walking-paradox-'+S.fmt.replace(':','x')+'-'+Date.now()+'.png';
+
+    // get a Blob (more reliable than data URL on iOS)
+    const blob = await new Promise(res=>{
+      if(cv.toBlob){ cv.toBlob(b=>res(b),'image/png'); }
+      else {
+        const dataURL=cv.toDataURL('image/png');
+        const bin=atob(dataURL.split(',')[1]);
+        const arr=new Uint8Array(bin.length);
+        for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+        res(new Blob([arr],{type:'image/png'}));
+      }
+    });
+
     S.safe=wasSafe; render();
+
+    // 1) Web Share with file (best on iOS — saves to Photos/Files)
+    try{
+      const file=new File([blob],fname,{type:'image/png'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file]});
+        return;
+      }
+    }catch(e){ /* user cancelled or unsupported — fall through */ }
+
+    // 2) Desktop / Android: anchor download
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.download=fname; a.href=url;
+    document.body.appendChild(a); a.click(); a.remove();
+
+    // 3) iOS fallback: if download attr ignored, open image so user can long-press > Save
+    if(isMobile()){
+      setTimeout(()=>{ window.open(url,'_blank'); }, 400);
+      btn.textContent='Long-press image → Save';
+      setTimeout(()=>{ btn.textContent=orig; }, 3500);
+    }
+    setTimeout(()=>URL.revokeObjectURL(url), 8000);
   });
 
   // re-render once fonts are ready (Devanagari metrics)

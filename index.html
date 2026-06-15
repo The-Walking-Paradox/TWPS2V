@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#14110d">
 <title>The Walking Paradox · Krishna Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -161,15 +162,20 @@
   /* ---------- Mobile ---------- */
   .mobile-tabs{display:none}
   @media(max-width:860px){
-    .app{flex-direction:column}
+    html,body{height:auto;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch}
+    .app{flex-direction:column;height:auto;min-height:100dvh}
     .panel{
-      width:100%;min-width:0;order:2;flex:1;
+      width:100%;min-width:0;order:2;flex:none;height:auto;
       border-right:none;border-top:1px solid var(--line);
     }
     .panel-head{display:none}
-    .stage{order:1;flex:none;height:46vh;height:46dvh;padding:12px}
-    .canvas-shell{height:100%}
-    .panel-body{padding:14px 16px 20px}
+    .stage{
+      order:1;flex:none;height:auto;padding:14px 12px 6px;
+    }
+    .canvas-shell{height:auto;width:auto;max-width:100%;justify-content:center}
+    canvas{height:auto;max-height:52vh;width:auto;max-width:100%}
+    .stage-tag{position:static;transform:none;margin:10px auto 0}
+    .panel-body{padding:14px 16px 28px;overflow:visible}
     .mobile-tabs{
       display:flex;background:var(--panel2);border-bottom:1px solid var(--line);
     }

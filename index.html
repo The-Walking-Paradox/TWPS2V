@@ -7491,6 +7491,7 @@ var QC = (function(){
     else{var b=atob(dataUrl.split(',')[1]),arr=new Uint8Array(b.length);for(var i=0;i<b.length;i++)arr[i]=b.charCodeAt(i);dlBlob(new Blob([arr],{type:'image/png'}),'walkingparadox-quote-'+new Date().toLocaleDateString('en-GB').replace(/\//g,'-')+'.png');setToast('Quote saved!');}
     fitCv();setTimeout(render,50);
   }
+
   function init(){cv=document.getElementById('qcCv');if(!cv)return;g2=cv.getContext('2d');var qEl=document.getElementById('qcQuote');var aEl=document.getElementById('qcAuthor');if(qEl)qEl.value=state.quote;if(aEl)aEl.value=state.author;fitCv();render();}
   function resize(){if(cv){fitCv();render();}}
   return{init:init,resize:resize,render:render,update:update,setFmt:setFmt,setStyle:setStyle,setFont:setFont,setSize:setSize,setPreset:setPreset,download:download,state:state};
@@ -10953,6 +10954,7 @@ var SAGE = (function(){
   var state = {
     photo:null, name:'', quote:'', sub:'', emoji:'🙏',
     brand:'The Walking Paradox', accent:'gold', format:'image',
+    quoteColor:'white', subColor:'dim', safe:true,
     exportMethod:'mp4', frame:0, playing:false, busy:false, raf:null,
   };
 
@@ -10962,6 +10964,9 @@ var SAGE = (function(){
     saffron: { c:'#ff9933', glow:'rgba(255,153,51,.12)' },
     blue:    { c:'#6aa8e8', glow:'rgba(74,127,192,.13)' },
   };
+
+  var QCOLORS = { white:'#f5f0e8', warm:'#ede4d3', gold:'#e8c96a', saffron:'#ff9933' };
+  var SCOLORS = { dim:'rgba(200,195,185,.75)', white:'rgba(245,240,232,.92)', gold:'rgba(232,201,106,.85)', saffron:'rgba(255,153,51,.85)' };
 
   var T_TOTAL = 360; // ~6s video
   var cv, g2, W, H, _img=new Image();
@@ -10992,6 +10997,7 @@ var SAGE = (function(){
     var pp=pip(W);
     var isVid=state.format==='video';
     var tot=totalFrames();
+    var cX = state.safe ? W*0.47 : W*0.5;  // shift left in safe mode to clear TikTok buttons
 
     // Animation progress (0..1) — instant for image
     var introP = isVid ? ease(Math.min(frame/40,1)) : 1;
@@ -11025,7 +11031,7 @@ var SAGE = (function(){
 
     // ── Circle photo ──
     var cr=W*.17;            // circle radius
-    var cx=W/2, cy=H*.2;
+    var cx=cX, cy=H*.2;
     g2.save();
     g2.globalAlpha=introP;
     if(state.photo && _img.complete && _img.naturalWidth){
@@ -11059,7 +11065,7 @@ var SAGE = (function(){
       var nsz=Math.round(W*.045);
       g2.font='800 '+nsz+'px "DM Sans","Mukta",sans-serif';
       g2.fillStyle=acc.c;g2.textAlign='center';
-      g2.fillText(state.name+' says… 🗣',W/2,nameY);
+      g2.fillText(state.name+' says… 🗣',cX,nameY);
       g2.restore();
     }
 
@@ -11071,12 +11077,13 @@ var SAGE = (function(){
     var qlen=qTxt.length;
     var qsz=qlen<80?Math.round(W*.058):qlen<160?Math.round(W*.05):qlen<260?Math.round(W*.043):Math.round(W*.037);
     g2.font='700 '+qsz+'px "DM Sans","Mukta",sans-serif';
-    g2.fillStyle='#f5f0e8';g2.textAlign='center';
-    var qWrapped=sharedWrap(g2,'\u201C'+qTxt+'\u201D',W*.84,9);
+    g2.fillStyle=QCOLORS[state.quoteColor]||'#f5f0e8';g2.textAlign='center';
+    var qMaxW = state.safe ? W*.74 : W*.84;
+    var qWrapped=sharedWrap(g2,'\u201C'+qTxt+'\u201D',qMaxW,9);
     var qLineH=qsz*1.4;
     var slideY=(1-quoteP)*W*.03;
     qWrapped.forEach(function(l,i){
-      g2.fillText(l,W/2,quoteY+i*qLineH+slideY);
+      g2.fillText(l,cX,quoteY+i*qLineH+slideY);
     });
     g2.restore();
     var quoteBottom=quoteY+qWrapped.length*qLineH;
@@ -11086,11 +11093,12 @@ var SAGE = (function(){
       g2.save();g2.globalAlpha=subP;
       var ssz=Math.round(W*.036);
       g2.font='600 '+ssz+'px "DM Sans","Mukta",sans-serif';
-      g2.fillStyle='rgba(200,195,185,.75)';g2.textAlign='center';
-      var sWrapped=sharedWrap(g2,'\u201C'+state.sub+'\u201D',W*.8,4);
+      g2.fillStyle=SCOLORS[state.subColor]||'rgba(200,195,185,.75)';g2.textAlign='center';
+      var sMaxW = state.safe ? W*.72 : W*.8;
+      var sWrapped=sharedWrap(g2,'\u201C'+state.sub+'\u201D',sMaxW,4);
       var sLineH=ssz*1.45;
       sWrapped.forEach(function(l,i){
-        g2.fillText(l,W/2,quoteBottom+W*.06+i*sLineH);
+        g2.fillText(l,cX,quoteBottom+W*.06+i*sLineH);
       });
       g2.restore();
       quoteBottom += W*.06+sWrapped.length*sLineH;
@@ -11101,7 +11109,7 @@ var SAGE = (function(){
       g2.save();g2.globalAlpha=emojiP;
       var esz=Math.round(W*.07);
       g2.font=esz+'px serif';g2.textAlign='center';
-      g2.fillText(state.emoji,W/2,Math.min(quoteBottom+W*.1,H*.9));
+      g2.fillText(state.emoji,cX,Math.min(quoteBottom+W*.1,H*.9));
       g2.restore();
     }
 
@@ -11220,7 +11228,26 @@ var SAGE = (function(){
     state.brand=(document.getElementById('sageBrand')||{}).value||'';
     render(state.frame||0);
   }
-  function setEmoji(e){ state.emoji=e; render(state.frame||0); }
+  function setEmoji(e){
+    state.emoji=e;
+    // highlight the matching quick-pick, clear custom input
+    var picks=['🙏','🕉','✨','🔱','💫',''];
+    for(var i=0;i<picks.length;i++){
+      var el=document.getElementById('sageEmo'+i);
+      if(el)el.classList.toggle('on',picks[i]===e);
+    }
+    var ce=document.getElementById('sageEmojiCustom'); if(ce)ce.value='';
+    render(state.frame||0);
+  }
+  function setCustomEmoji(v){
+    // take the typed value as the emoji; clear quick-pick highlights
+    state.emoji=(v||'').trim();
+    for(var i=0;i<6;i++){
+      var el=document.getElementById('sageEmo'+i);
+      if(el)el.classList.remove('on');
+    }
+    render(state.frame||0);
+  }
   function setAccent(a){
     state.accent=a;
     ['Gold','Crim','Saff','Blue'].forEach(function(k){
@@ -11237,6 +11264,31 @@ var SAGE = (function(){
     render(0);
   }
 
+  function setQuoteColor(c){
+    state.quoteColor=c;
+    ['White','Warm','Gold','Saff'].forEach(function(k){
+      var map={White:'white',Warm:'warm',Gold:'gold',Saff:'saffron'};
+      var el=document.getElementById('sageQC'+k);
+      if(el)el.classList.toggle('on',map[k]===c);
+    });
+    render(state.frame||0);
+  }
+  function setSubColor(c){
+    state.subColor=c;
+    ['Dim','White','Gold','Saff'].forEach(function(k){
+      var map={Dim:'dim',White:'white',Gold:'gold',Saff:'saffron'};
+      var el=document.getElementById('sageSC'+k);
+      if(el)el.classList.toggle('on',map[k]===c);
+    });
+    render(state.frame||0);
+  }
+  function setSafe(on){
+    state.safe=on;
+    document.getElementById('sageSafeOn').classList.toggle('on',on);
+    document.getElementById('sageSafeOff').classList.toggle('on',!on);
+    render(state.frame||0);
+  }
+
   function init(){
     cv=document.getElementById('sageCv');
     if(!cv){WP.log('error','SAGE: canvas not found');return;}
@@ -11251,7 +11303,8 @@ var SAGE = (function(){
 
   return {
     init:init, resize:resize, render:render, update:update,
-    setEmoji:setEmoji, setAccent:setAccent, setFormat:setFormat,
+    setEmoji:setEmoji, setCustomEmoji:setCustomEmoji, setAccent:setAccent, setFormat:setFormat,
+    setQuoteColor:setQuoteColor, setSubColor:setSubColor, setSafe:setSafe,
     removePhoto:removePhoto, preview:preview, export:doExport, state:state,
   };
 
@@ -11801,15 +11854,16 @@ if(typeof SAGE !== 'undefined') window.SAGE = SAGE;
       </div>
 
       <div>
-        <div class="sec-lbl">Bottom Emoji</div>
-        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:5px">
-          <button class="chip-btn on" onclick="SAGE.setEmoji('🙏')">🙏</button>
-          <button class="chip-btn" onclick="SAGE.setEmoji('🕉')">🕉</button>
-          <button class="chip-btn" onclick="SAGE.setEmoji('✨')">✨</button>
-          <button class="chip-btn" onclick="SAGE.setEmoji('🔱')">🔱</button>
-          <button class="chip-btn" onclick="SAGE.setEmoji('💫')">💫</button>
-          <button class="chip-btn" onclick="SAGE.setEmoji('')">None</button>
+        <div class="sec-lbl">Bottom Emoji <span style="color:var(--t3);font-size:9px;font-weight:400;text-transform:none;letter-spacing:0">(tap a quick pick or type your own)</span></div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-bottom:6px">
+          <button class="chip-btn on" id="sageEmo0" onclick="SAGE.setEmoji('🙏')">🙏</button>
+          <button class="chip-btn" id="sageEmo1" onclick="SAGE.setEmoji('🕉')">🕉</button>
+          <button class="chip-btn" id="sageEmo2" onclick="SAGE.setEmoji('✨')">✨</button>
+          <button class="chip-btn" id="sageEmo3" onclick="SAGE.setEmoji('🔱')">🔱</button>
+          <button class="chip-btn" id="sageEmo4" onclick="SAGE.setEmoji('💫')">💫</button>
+          <button class="chip-btn" id="sageEmo5" onclick="SAGE.setEmoji('')">None</button>
         </div>
+        <input class="fi" id="sageEmojiCustom" placeholder="Or type / paste any emoji here 😊🔥🌸" oninput="SAGE.setCustomEmoji(this.value)" style="text-align:center;font-size:18px"/>
       </div>
 
       <div>
@@ -11818,12 +11872,40 @@ if(typeof SAGE !== 'undefined') window.SAGE = SAGE;
       </div>
 
       <div>
-        <div class="sec-lbl">Accent Color</div>
+        <div class="sec-lbl">Accent Color <span style="color:var(--t3);font-size:9px;font-weight:400;text-transform:none;letter-spacing:0">(name + photo ring)</span></div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
           <button class="chip-btn on" id="sageAccGold"   onclick="SAGE.setAccent('gold')">Gold</button>
           <button class="chip-btn"    id="sageAccCrim"   onclick="SAGE.setAccent('crimson')">Crimson</button>
           <button class="chip-btn"    id="sageAccSaff"   onclick="SAGE.setAccent('saffron')">Saffron</button>
           <button class="chip-btn"    id="sageAccBlue"   onclick="SAGE.setAccent('blue')">Blue</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="sec-lbl">Quote Text Color</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+          <button class="chip-btn on" id="sageQCWhite" onclick="SAGE.setQuoteColor('white')">White</button>
+          <button class="chip-btn"    id="sageQCWarm"  onclick="SAGE.setQuoteColor('warm')">Warm</button>
+          <button class="chip-btn"    id="sageQCGold"  onclick="SAGE.setQuoteColor('gold')">Gold</button>
+          <button class="chip-btn"    id="sageQCSaff"  onclick="SAGE.setQuoteColor('saffron')">Saffron</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="sec-lbl">Reflection Text Color</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+          <button class="chip-btn on" id="sageSCDim"  onclick="SAGE.setSubColor('dim')">Dim</button>
+          <button class="chip-btn"    id="sageSCWhite" onclick="SAGE.setSubColor('white')">White</button>
+          <button class="chip-btn"    id="sageSCGold" onclick="SAGE.setSubColor('gold')">Gold</button>
+          <button class="chip-btn"    id="sageSCSaff" onclick="SAGE.setSubColor('saffron')">Saffron</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="sec-lbl">📐 Safe Layout <span style="color:var(--t3);font-size:9px;font-weight:400;text-transform:none;letter-spacing:0">(keeps text clear of TikTok buttons)</span></div>
+        <div class="grid2">
+          <button class="chip-btn on" id="sageSafeOn"  onclick="SAGE.setSafe(true)">✅ On</button>
+          <button class="chip-btn"    id="sageSafeOff" onclick="SAGE.setSafe(false)">Off</button>
         </div>
       </div>
 

@@ -7052,15 +7052,17 @@ var AI_PROMPTS = {
   },
   sage: {
     label: 'Says Quote',
-    prompt: 'You are a content creator for "The Walking Paradox" — a page sharing wisdom from spiritual and historical figures.\n\nGive me a powerful quote from: [NAME — e.g. Buddha, Krishna, Chanakya, Vivekananda]\n\nRules:\n- Use an authentic-style teaching from this figure (spiritual/historical figures only — not modern public figures, to avoid misattribution)\n- The main quote should be 2-4 sentences, profound and shareable\n- Add a short reflection line that makes the viewer think\n\nOUTPUT EXACTLY THIS FORMAT:\nNAME: <speaker name>\nQUOTE: <the main quote>\nREFLECTION: <a short thought-provoking line or question>',
+    prompt: 'You are a content creator for "The Walking Paradox" — a page sharing wisdom from spiritual and historical figures.\n\nGive me a powerful quote from: [NAME — e.g. Buddha, Krishna, Chanakya, Vivekananda]\n\nCRITICAL RULES:\n- Write the quote in ONE language only — either all English OR all Nepali, NEVER mix both or give two versions.\n- Use an authentic-style teaching from this figure (spiritual/historical figures only — not modern public figures).\n- Main quote: 2-3 sentences, profound and shareable. Keep it concise enough to fit on a card (under 280 characters).\n- Reflection: ONE short thought-provoking line or question (under 120 characters).\n- Do NOT include quotation marks — the card adds them automatically.\n\nOUTPUT EXACTLY THIS FORMAT:\nNAME: <speaker name>\nQUOTE: <the main quote, one language, no quotes>\nREFLECTION: <one short line, no quotes>',
     parse: function(text){
       var get=function(k){return (text.match(new RegExp(k+':\\s*([\\s\\S]+?)(?=\\n[A-Z]+:|$)','i'))||[])[1];};
       var name=get('NAME'), quote=get('QUOTE'), refl=get('REFLECTION');
       if(!quote) return 'Could not find QUOTE: line';
+      // Strip surrounding quote marks so the card's own quotes don't double up
+      var strip=function(s){ return (s||'').trim().replace(/^[\u201C\u201D"']+|[\u201C\u201D"']+$/g,'').trim(); };
       try{
         var ne=document.getElementById('sageName'); if(ne&&name)ne.value=name.trim();
-        var qe=document.getElementById('sageQuote'); if(qe&&quote)qe.value=quote.trim();
-        var se=document.getElementById('sageSub'); if(se&&refl)se.value=refl.trim();
+        var qe=document.getElementById('sageQuote'); if(qe&&quote)qe.value=strip(quote);
+        var se=document.getElementById('sageSub'); if(se&&refl)se.value=strip(refl);
         SAGE.update();
       }catch(e){ return 'Says tab not ready — tap it first, then retry'; }
       return null;
@@ -10954,7 +10956,7 @@ var SAGE = (function(){
   var state = {
     photo:null, name:'', quote:'', sub:'', emoji:'🙏',
     brand:'The Walking Paradox', accent:'gold', format:'image',
-    quoteColor:'white', subColor:'dim', safe:true,
+    quoteColor:'white', quoteStyle:'bold', subColor:'dim', subStyle:'normal', safe:true,
     exportMethod:'mp4', frame:0, playing:false, busy:false, raf:null,
   };
 
@@ -11017,12 +11019,12 @@ var SAGE = (function(){
     g2.fillStyle='#c9334a';g2.fillRect(0,0,pp,H*.5);
     g2.fillStyle='#4a7fc0';g2.fillRect(0,H*.5,pp,H*.5);
 
-    // Faint ॐ watermark center
+    // Faint ॐ watermark — smaller, fixed exact middle, inside safe zone
     g2.save();
-    g2.globalAlpha=0.05;
-    g2.font='900 '+Math.round(W*.5)+'px "Mukta",serif';
+    g2.globalAlpha=0.055;
+    g2.font='900 '+Math.round(W*.32)+'px "Mukta",serif';
     g2.fillStyle=acc.c;g2.textAlign='center';g2.textBaseline='middle';
-    g2.fillText('ॐ',W/2,H*.5);
+    g2.fillText('ॐ',cX,H*.5);
     g2.textBaseline='alphabetic';
     g2.restore();
 
@@ -11075,12 +11077,22 @@ var SAGE = (function(){
     g2.save();g2.globalAlpha=quoteP;
     // Auto-size quote by length
     var qlen=qTxt.length;
-    var qsz=qlen<80?Math.round(W*.058):qlen<160?Math.round(W*.05):qlen<260?Math.round(W*.043):Math.round(W*.037);
-    g2.font='700 '+qsz+'px "DM Sans","Mukta",sans-serif';
-    g2.fillStyle=QCOLORS[state.quoteColor]||'#f5f0e8';g2.textAlign='center';
+    var qStyleStr=state.quoteStyle==='italic'?'italic ':'';
+    var qWeightStr=state.quoteStyle==='normal'?'500':'700';
     var qMaxW = state.safe ? W*.74 : W*.84;
-    var qWrapped=sharedWrap(g2,'\u201C'+qTxt+'\u201D',qMaxW,9);
-    var qLineH=qsz*1.4;
+    g2.fillStyle=QCOLORS[state.quoteColor]||'#f5f0e8';g2.textAlign='center';
+    // Start size by length, then shrink so quote fits the available vertical space
+    var qsz=qlen<80?Math.round(W*.058):qlen<160?Math.round(W*.05):qlen<260?Math.round(W*.043):Math.round(W*.037);
+    var availH=H*0.5; // space between quote start and reflection/emoji zone
+    var qWrapped, qLineH, fitGuard=0;
+    do{
+      g2.font=qStyleStr+qWeightStr+' '+qsz+'px "DM Sans","Mukta",sans-serif';
+      qWrapped=sharedWrap(g2,'\u201C'+qTxt+'\u201D',qMaxW,12);
+      qLineH=qsz*1.4;
+      if(qWrapped.length*qLineH<=availH || qsz<=Math.round(W*.028)) break;
+      qsz=Math.round(qsz*0.92);
+      fitGuard++;
+    }while(fitGuard<8);
     var slideY=(1-quoteP)*W*.03;
     qWrapped.forEach(function(l,i){
       g2.fillText(l,cX,quoteY+i*qLineH+slideY);
@@ -11091,17 +11103,19 @@ var SAGE = (function(){
     // ── Reflection sub-line ──
     if(state.sub){
       g2.save();g2.globalAlpha=subP;
-      var ssz=Math.round(W*.036);
-      g2.font='600 '+ssz+'px "DM Sans","Mukta",sans-serif';
+      var ssz=Math.round(W*.044);  // bigger, like the reference card
+      var sStyle=state.subStyle==='italic'?'italic ':'';
+      var sWeight=state.subStyle==='bold'?'700':'600';
+      g2.font=sStyle+sWeight+' '+ssz+'px "DM Sans","Mukta",sans-serif';
       g2.fillStyle=SCOLORS[state.subColor]||'rgba(200,195,185,.75)';g2.textAlign='center';
-      var sMaxW = state.safe ? W*.72 : W*.8;
-      var sWrapped=sharedWrap(g2,'\u201C'+state.sub+'\u201D',sMaxW,4);
-      var sLineH=ssz*1.45;
+      var sMaxW = state.safe ? W*.72 : W*.82;
+      var sWrapped=sharedWrap(g2,'\u201C'+state.sub+'\u201D',sMaxW,6);
+      var sLineH=ssz*1.5;
       sWrapped.forEach(function(l,i){
-        g2.fillText(l,cX,quoteBottom+W*.06+i*sLineH);
+        g2.fillText(l,cX,quoteBottom+W*.07+i*sLineH);
       });
       g2.restore();
-      quoteBottom += W*.06+sWrapped.length*sLineH;
+      quoteBottom += W*.07+sWrapped.length*sLineH;
     }
 
     // ── Bottom emoji ──
@@ -11196,22 +11210,30 @@ var SAGE = (function(){
   }
 
   // ── EXPORT ──
+  function savePng(){
+    if(!state.quote){setToast('Add a quote first');return;}
+    state.playing=false;cancelAnimationFrame(state.raf);
+    render(0);
+    cv.toBlob(function(b){
+      window._mp4Blob=b;window._mp4Name='walkingparadox-quote.png';
+      var st=document.getElementById('sageStatus');
+      if(IS_IOS){
+        st.innerHTML='✅ Image ready!<br><button onclick="_saveMp4()" style="margin-top:10px;padding:14px 28px;border-radius:10px;font-size:15px;font-weight:700;border:none;background:#3ecf8e;color:#0c0d15;font-family:inherit">📤 Save to Photos</button>';
+      } else {
+        dlBlob(b,'walkingparadox-quote.png');
+        st.innerHTML='✅ PNG downloaded!';
+      }
+    },'image/png');
+  }
+
   async function doExport(){
     if(state.busy)return;
     if(!state.quote){setToast('Add a quote first');return;}
     state.playing=false;cancelAnimationFrame(state.raf);
-    if(state.format==='image' || state.exportMethod==='png'){
-      render(0);
-      cv.toBlob(function(b){
-        if(IS_IOS){
-          window._mp4Blob=b;window._mp4Name='walkingparadox-quote.png';
-          document.getElementById('sageStatus').innerHTML='✅ Image ready!<br><button onclick="_saveMp4()" style="margin-top:10px;padding:14px 28px;border-radius:10px;font-size:15px;font-weight:700;border:none;background:#3ecf8e;color:#0c0d15;font-family:inherit">📤 Save to Photos</button>';
-        } else {
-          dlBlob(b,'walkingparadox-quote.png');
-        }
-      },'image/png');
-      return;
-    }
+    // Image format → always PNG
+    if(state.format==='image'){ savePng(); return; }
+    // Video format → use selected export method (mp4/webm/zip), or png if chosen
+    if(state.exportMethod==='png'){ savePng(); return; }
     if(state.exportMethod==='mp4')
       await doMp4Export(cv,function(f){_draw(f);},totalFrames,'quote','sageProg','sageProgLbl','sageStatus',setBusy);
     else if(state.exportMethod==='webm')
@@ -11273,12 +11295,28 @@ var SAGE = (function(){
     });
     render(state.frame||0);
   }
+  function setQuoteStyle(s){
+    state.quoteStyle=s;
+    ['Bold','Normal','Italic'].forEach(function(k){
+      var el=document.getElementById('sageQS'+k);
+      if(el)el.classList.toggle('on',k.toLowerCase()===s);
+    });
+    render(state.frame||0);
+  }
   function setSubColor(c){
     state.subColor=c;
     ['Dim','White','Gold','Saff'].forEach(function(k){
       var map={Dim:'dim',White:'white',Gold:'gold',Saff:'saffron'};
       var el=document.getElementById('sageSC'+k);
       if(el)el.classList.toggle('on',map[k]===c);
+    });
+    render(state.frame||0);
+  }
+  function setSubStyle(s){
+    state.subStyle=s;
+    ['Normal','Italic','Bold'].forEach(function(k){
+      var el=document.getElementById('sageSS'+k);
+      if(el)el.classList.toggle('on',k.toLowerCase()===s);
     });
     render(state.frame||0);
   }
@@ -11304,8 +11342,8 @@ var SAGE = (function(){
   return {
     init:init, resize:resize, render:render, update:update,
     setEmoji:setEmoji, setCustomEmoji:setCustomEmoji, setAccent:setAccent, setFormat:setFormat,
-    setQuoteColor:setQuoteColor, setSubColor:setSubColor, setSafe:setSafe,
-    removePhoto:removePhoto, preview:preview, export:doExport, state:state,
+    setQuoteColor:setQuoteColor, setQuoteStyle:setQuoteStyle, setSubColor:setSubColor, setSubStyle:setSubStyle, setSafe:setSafe,
+    removePhoto:removePhoto, preview:preview, export:doExport, savePng:savePng, state:state,
   };
 
 })();
@@ -11892,12 +11930,30 @@ if(typeof SAGE !== 'undefined') window.SAGE = SAGE;
       </div>
 
       <div>
+        <div class="sec-lbl">Quote Style</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+          <button class="chip-btn on" id="sageQSBold"   onclick="SAGE.setQuoteStyle('bold')">Bold</button>
+          <button class="chip-btn"    id="sageQSNormal" onclick="SAGE.setQuoteStyle('normal')">Normal</button>
+          <button class="chip-btn"    id="sageQSItalic" onclick="SAGE.setQuoteStyle('italic')">Italic</button>
+        </div>
+      </div>
+
+      <div>
         <div class="sec-lbl">Reflection Text Color</div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
           <button class="chip-btn on" id="sageSCDim"  onclick="SAGE.setSubColor('dim')">Dim</button>
           <button class="chip-btn"    id="sageSCWhite" onclick="SAGE.setSubColor('white')">White</button>
           <button class="chip-btn"    id="sageSCGold" onclick="SAGE.setSubColor('gold')">Gold</button>
           <button class="chip-btn"    id="sageSCSaff" onclick="SAGE.setSubColor('saffron')">Saffron</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="sec-lbl">Reflection Style</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+          <button class="chip-btn on" id="sageSSNormal" onclick="SAGE.setSubStyle('normal')">Normal</button>
+          <button class="chip-btn"    id="sageSSItalic" onclick="SAGE.setSubStyle('italic')">Italic</button>
+          <button class="chip-btn"    id="sageSSBold"   onclick="SAGE.setSubStyle('bold')">Bold</button>
         </div>
       </div>
 
@@ -11928,6 +11984,7 @@ if(typeof SAGE !== 'undefined') window.SAGE = SAGE;
     </div>
     <div class="status-box" id="sageStatus">Upload a photo, add the quote, then Preview or Export.</div>
     <div class="exp-panel" id="sageExpPanel"></div>
+    <button onclick="SAGE.savePng()" style="width:100%;padding:13px;min-height:48px;margin-bottom:8px;background:rgba(62,207,142,.12);border:1.5px solid rgba(62,207,142,.4);color:#3ecf8e;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer">🖼 Save as PNG (image)</button>
     <div class="act-bar" id="sageBarMob">
       <button class="abtn prev-btn" onclick="SAGE.preview()">▶ Preview</button>
       <button class="abtn gold-btn" onclick="SAGE.export()">⬇ Export</button>

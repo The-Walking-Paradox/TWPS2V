@@ -2407,6 +2407,7 @@ min-height:48px;}
   <button id="langNpBtn" onclick="setLang('np')" class="on" style="padding:8px 10px;border-radius:7px;border:none;background:transparent;color:var(--gd);font-size:12px;font-weight:700;cursor:pointer;min-height:36px">🇳🇵 नेपा</button>
   <button id="langEnBtn" onclick="setLang('en')" style="padding:8px 10px;border-radius:7px;border:none;background:transparent;color:var(--t2);font-size:12px;font-weight:700;cursor:pointer;min-height:36px">🌏 Eng</button>
 </div>
+<button onclick="setSeriesBadge()" style="position:fixed;bottom:20px;right:12px;z-index:900;width:48px;height:48px;border-radius:50%;background:var(--lift);border:1.5px solid rgba(232,201,106,.4);color:var(--gd);font-size:16px;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.4)" title="Set series badge (EP N)">🔢</button>
 <button id="safeZoneBtn" onclick="toggleSafeZones()" style="position:fixed;bottom:80px;right:12px;z-index:900;width:48px;height:48px;border-radius:50%;background:var(--lift);border:1.5px solid var(--gd);color:var(--gd);font-size:18px;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.4)" title="Toggle safe zones">📐</button>
 
 <!-- ══ HEADER ══ -->
@@ -4085,7 +4086,7 @@ const clamp =(v,a,b)=>Math.min(b,Math.max(a,v));
 const prg   =(f,s,d)=>clamp((f-s)/d,0,1);
 const pip   =W=>Math.round(W*.014);
 
-function sharedDrawBg(g,W,H,bgKey){
+function sharedDrawBg(g,W,H,bgKey,f){
   const c=BGS[bgKey]||BGS.himalaya;
   const gr=g.createLinearGradient(0,0,W*.4,H);
   c.forEach((col,i)=>gr.addColorStop(i/(c.length-1),col));
@@ -4093,6 +4094,21 @@ function sharedDrawBg(g,W,H,bgKey){
   const vig=g.createRadialGradient(W/2,H/2,H*.1,W/2,H/2,H*.75);
   vig.addColorStop(0,'rgba(0,0,0,0)');vig.addColorStop(1,'rgba(0,0,0,.5)');
   g.fillStyle=vig;g.fillRect(0,0,W,H);
+  if(f!==undefined){
+    // living background: drifting glow + 16 gold dust particles (deterministic)
+    var gx=W*(.5+.07*Math.sin(f*.008)), gy=H*(.44+.045*Math.cos(f*.006));
+    var rg2=g.createRadialGradient(gx,gy,0,gx,gy,W*.85);
+    rg2.addColorStop(0,'rgba(232,201,106,.07)');rg2.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=rg2;g.fillRect(0,0,W,H);
+    for(var di=0;di<16;di++){
+      var spd=.4+.9*prand(di+50);
+      var py=H*1.05-((f*spd+prand(di+99)*H*1.1)%(H*1.1));
+      var px=W*prand(di)+Math.sin(f*.012+di*1.7)*W*.012;
+      g.beginPath();g.arc(px,py,1.2+2.2*prand(di+7),0,Math.PI*2);
+      g.fillStyle='rgba(232,201,106,'+(0.04+0.1*prand(di+13))+')';
+      g.fill();
+    }
+  }
 }
 function sharedDrawMtn(g,W,H){
   const mH=H*.22,sY=H-mH;
@@ -4140,6 +4156,8 @@ function sharedDrawWatermark(g,W,H){
   g.restore();
 
   try{ drawSafeZones(g,W,H); }catch(e){}
+
+  try{ drawSeriesBadge(g,W,H); }catch(e){}
 }
 
 // sharedDrawTopBrand — brand at top center, safe below FB/IG UI overlay
@@ -4218,6 +4236,104 @@ function sharedWrap(g,txt,maxW,maxL){
   }
   return result.slice(0,maxL);
 }
+
+/* ═══ WP SEMANTIC COLOR SYSTEM (ported from Story Engine) ═══ */
+var WP_SEM={gold:'#e8c96a',red:'#ff5d75',green:'#3ecf8e',ink:'#0c0d15'};
+function easeOutBack(t){var c1=1.70158,c3=c1+1;t=Math.max(0,Math.min(t,1));return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2);}
+function prand(n){var x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);}
+/* tokenizer: *gold* _red_ +green+ [box] ~strike~ ; digits auto-gold */
+function tokHL(text){
+  var OPEN={'*':'gold','_':'red','+':'green','[':'box','~':'strike'};
+  var CLOSEC={gold:'*',red:'_',green:'+',box:']',strike:'~'};
+  var toks=[],st=null;
+  (text||'').split(/\s+/).forEach(function(raw){
+    if(!raw)return;
+    var w=raw;
+    if(st===null){var f=w.charAt(0);if(OPEN[f]){st=OPEN[f];while(w.charAt(0)===f)w=w.slice(1);}}
+    var myst=st;
+    if(st!==null){var c=CLOSEC[st];if(w.length&&w.charAt(w.length-1)===c){while(w.length&&w.charAt(w.length-1)===c)w=w.slice(0,-1);st=null;}}
+    if(w)toks.push({w:w,st:myst});
+  });
+  toks.forEach(function(tk){if(!tk.st&&/[0-9\u0966-\u096F]/.test(tk.w))tk.st='gold';});
+  return toks;
+}
+function hasHL(toks){for(var i=0;i<toks.length;i++)if(toks[i].st)return true;return false;}
+function wrapToks(g,toks,maxW,maxL){
+  var fontPx=42;var fm=(g.font||'').match(/(\d+(?:\.\d+)?)px/);if(fm)fontPx=parseFloat(fm[1]);
+  var ceil=Math.max(6,Math.floor(maxW/(fontPx*0.60)));
+  function fits(s){if(s.length>ceil)return false;return g.measureText(s).width<=maxW;}
+  var lines=[],cur=[],curTxt='';
+  toks.forEach(function(tk){
+    var test=curTxt?curTxt+' '+tk.w:tk.w;
+    if(!fits(test)&&curTxt){lines.push(cur);cur=[tk];curTxt=tk.w;}
+    else{cur.push(tk);curTxt=test;}
+  });
+  if(cur.length)lines.push(cur);
+  return lines.slice(0,maxL||99);
+}
+/* universal semantic renderer.
+   drawRich(g, text, x, yTop(baseline of first line), opts)
+   opts: {maxW, maxL, lh(mult,1.3), base('#f5f0e8'), accent(gold), align('left'|'center'),
+          autoLast(bool: gold last words if unmarked), reveal(frames|undefined), measure(bool)}
+   returns {lines, height, lh} — measure:true skips drawing. */
+function drawRich(g,text,x,y,opts){
+  opts=opts||{};
+  var toks=tokHL(text);
+  if(opts.autoLast&&!hasHL(toks)&&toks.length>1){toks[toks.length-1].st='gold';if(toks.length>4)toks[toks.length-2].st='gold';}
+  var fontPx=42;var fm=(g.font||'').match(/(\d+(?:\.\d+)?)px/);if(fm)fontPx=parseFloat(fm[1]);
+  var lines=wrapToks(g,toks,opts.maxW||300,opts.maxL||99);
+  var lhPx=fontPx*(opts.lh||1.3);
+  var out={lines:lines.length,height:lines.length*lhPx,lh:lhPx};
+  if(opts.measure)return out;
+  var accent=opts.accent||WP_SEM.gold;
+  var COL={gold:accent,red:WP_SEM.red,green:WP_SEM.green};
+  var base=opts.base||'#f5f0e8';
+  var prevAlign=g.textAlign;
+  g.textAlign='left';
+  var ti=0, baseA=g.globalAlpha;
+  lines.forEach(function(line,li){
+    var lw=0;line.forEach(function(tk){lw+=g.measureText(tk.w+' ').width;});
+    lw-=g.measureText(' ').width;
+    var xx=(opts.align==='center')?x-lw/2:(opts.align==='right'?x-lw:x);
+    var lineY=y+li*lhPx;
+    line.forEach(function(tk){
+      var p=1,rise=0;
+      if(opts.reveal!==undefined){
+        p=Math.max(0,Math.min((opts.reveal-ti*2)/6,1));
+        rise=(1-easeOutBack(p))*fontPx*0.4;
+      }
+      g.globalAlpha=baseA*p;
+      var yy=lineY+rise;
+      var wpx=g.measureText(tk.w).width;
+      if(tk.st==='box'){
+        var sb=g.shadowBlur;g.shadowBlur=0;
+        var padX=fontPx*.16,padY=fontPx*.10;
+        g.fillStyle=accent;
+        if(g.roundRect){g.beginPath();g.roundRect(xx-padX,yy-fontPx*.78-padY,wpx+padX*2,fontPx*1.0+padY*2,fontPx*.15);g.fill();}
+        else g.fillRect(xx-padX,yy-fontPx*.78-padY,wpx+padX*2,fontPx*1.0+padY*2);
+        g.fillStyle=WP_SEM.ink;
+        g.fillText(tk.w,xx,yy);
+        g.shadowBlur=sb;
+      } else if(tk.st==='strike'){
+        g.fillStyle='rgba(255,110,130,.8)';
+        g.fillText(tk.w,xx,yy);
+        var sb2=g.shadowBlur;g.shadowBlur=0;
+        g.strokeStyle=WP_SEM.red;g.lineWidth=Math.max(3,fontPx*.075);
+        g.beginPath();g.moveTo(xx-fontPx*.04,yy-fontPx*.3);g.lineTo(xx+wpx+fontPx*.04,yy-fontPx*.3);g.stroke();
+        g.shadowBlur=sb2;
+      } else {
+        g.fillStyle=tk.st?(COL[tk.st]||accent):base;
+        g.fillText(tk.w,xx,yy);
+      }
+      xx+=g.measureText(tk.w+' ').width;
+      ti++;
+    });
+  });
+  g.globalAlpha=baseA;
+  g.textAlign=prevAlign;
+  return out;
+}
+
 function sharedRR(g,x,y,w,h,r){
   g.beginPath();g.moveTo(x+r,y);g.lineTo(x+w-r,y);g.quadraticCurveTo(x+w,y,x+w,y+r);
   g.lineTo(x+w,y+h-r);g.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
@@ -5550,12 +5666,12 @@ function nRender(){
   const headFallback=(nS.headFont==='DM Sans')?'sans-serif':'serif';
   g.font=nS.headWeight+' '+headSz+'px "'+nS.headFont+'",'+headFallback;
   g.textAlign='left';
-  const hlines=sharedWrap(g,nS.headline||'Your headline here...',Math.max(headSz*2,hmaxW),6);
+  const hM=drawRich(g,nS.headline||'Your headline here...',0,0,{maxW:Math.max(headSz*2,hmaxW),maxL:6,lh:1.22,measure:true});
 
   // Text shadow — stronger now so it pops off any bg
   g.shadowColor='rgba(0,0,0,.9)';g.shadowBlur=Math.round(W*.028);g.shadowOffsetX=0;g.shadowOffsetY=Math.round(W*.004);
   g.fillStyle=nS.headColor;
-  hlines.forEach((l,i)=>g.fillText(l,hPx,hPy+i*headSz*1.22));
+  drawRich(g,nS.headline||'Your headline here...',hPx,hPy,{maxW:Math.max(headSz*2,hmaxW),maxL:6,lh:1.22,base:nS.headColor,autoLast:true});
   g.shadowBlur=0;g.shadowOffsetY=0;
 
   // ── GEMINI FIX #2: Gold accent line — width matches first few words ──
@@ -5567,7 +5683,7 @@ function nRender(){
   const ulGrad=g.createLinearGradient(hPx,0,hPx+dynamicUlW,0);
   ulGrad.addColorStop(0,'rgba(201,51,74,1)');ulGrad.addColorStop(1,'rgba(232,201,106,.8)');
   g.fillStyle=ulGrad;
-  g.fillRect(hPx,hPy+hlines.length*headSz*1.22+headSz*.18,dynamicUlW,Math.max(3,W*.004));
+  g.fillRect(hPx,hPy+hM.lines*headSz*1.22+headSz*.18,dynamicUlW,Math.max(3,W*.004));
 
   // ── BODY TEXT — free position ──
   if(nS.subtext&&nS.subtext.trim()){
@@ -5579,8 +5695,7 @@ function nRender(){
     g.font='400 '+bodySz+'px "'+nS.bodyFont+'",'+bodyFallback;
     g.shadowColor='rgba(0,0,0,.8)';g.shadowBlur=Math.round(W*.018);g.shadowOffsetY=Math.round(W*.003);
     g.fillStyle=nS.bodyColor;g.textAlign='left';
-    const blines=sharedWrap(g,nS.subtext,Math.max(bodySz*3,bmaxW),8);
-    blines.forEach((l,i)=>g.fillText(l,bPx,bPy+i*bodySz*1.65));
+    drawRich(g,nS.subtext,bPx,bPy,{maxW:Math.max(bodySz*3,bmaxW),maxL:8,lh:1.65,base:nS.bodyColor});
     g.shadowBlur=0;g.shadowOffsetY=0;
   }
 
@@ -5590,7 +5705,7 @@ function nRender(){
     const dpx=dLayer==='head'?nS.headX*W:nS.bodyX*W;
     const dpy=dLayer==='head'?nS.headY*H:nS.bodyY*H;
     const dSz=dLayer==='head'?headSz:Math.round(nS.bodySize*(W/1080));
-    const dLines=dLayer==='head'?hlines.length:(nS.subtext?sharedWrap(g,nS.subtext,W-(dpx+W*.04),8).length:1);
+    const dLines=dLayer==='head'?hM.lines:(nS.subtext?drawRich(g,nS.subtext,0,0,{maxW:W-(dpx+W*.04),maxL:8,measure:true}).lines:1);
     const dH=dLines*dSz*1.3;
     const dW=Math.min(W*.85,W-(dpx+W*.02));
     // Dashed selection box
@@ -5911,7 +6026,7 @@ function vDim(){return VDIMS[vS.fmt];}
 function vFitCv(){const{W,H}=vDim();const mxW=vCv.parentElement.clientWidth;const mxH=window.innerHeight*.44;let pw,ph;if(W/H>=1){pw=Math.min(mxW,520);ph=pw*(H/W);if(ph>mxH){ph=mxH;pw=ph*(W/H);}}else{ph=Math.min(mxH,420);pw=ph*(W/H);if(pw>mxW){pw=mxW;ph=pw*(H/W);}}vCv.style.width=pw+'px';vCv.style.height=ph+'px';vCv.width=W;vCv.height=H;}
 function vRender(frame){
   const{W,H}=vDim();const g=vg;
-  sharedDrawBg(g,W,H,vS.bg);
+  sharedDrawBg(g,W,H,vS.bg,frame);
   const tot=vTotal();frame=Math.min(frame||0,tot-1);
   const _items=vS.items.filter(function(it){return it.name&&it.name.trim();});
   const _cnt=_items.length||1;
@@ -5925,12 +6040,12 @@ function vRender(frame){
     g.font='900 '+tsz+'px "DM Sans","Mukta",sans-serif';
     g.fillStyle='#f5f0e8';g.textAlign='center';
     g.shadowColor='rgba(0,0,0,.85)';g.shadowBlur=W*.025;
-    const tl=sharedWrap(g,vS.listTitle,W*.85,2);
-    tl.forEach((l,i)=>g.fillText(l,W/2,H*.43+i*tsz*1.2));
+    const tM=drawRich(g,vS.listTitle,0,0,{maxW:W*.85,maxL:2,lh:1.2,measure:true});
+    drawRich(g,vS.listTitle,W/2,H*.43,{maxW:W*.85,maxL:2,lh:1.2,base:'#f5f0e8',align:'center',autoLast:true,reveal:frame});
     g.shadowBlur=0;
     g.fillStyle='#c9334a';
     const ulW=Math.min(W*.14,80);
-    g.fillRect(W/2-ulW/2,H*.43+tl.length*tsz*1.2+tsz*.2,ulW,Math.max(3,W*.004));
+    g.fillRect(W/2-ulW/2,H*.43+tM.lines*tsz*1.2+tsz*.2,ulW,Math.max(3,W*.004));
     g.restore();
     sharedDrawBottom(g,W,H,p);return;
   }
@@ -5950,18 +6065,23 @@ function vRender(frame){
     g.font='900 '+nmsz+'px "DM Sans","Mukta",sans-serif';
     g.fillStyle='#ffffff';
     g.shadowColor='rgba(0,0,0,.95)';g.shadowBlur=W*.03;
-    const nl=sharedWrap(g,r1.name||'???',W*.88,2);
-    nl.forEach((l,i)=>g.fillText(l,W/2,H*.41+i*nmsz*1.15));
+    const nM=drawRich(g,r1.name||'???',0,0,{maxW:W*.88,maxL:2,lh:1.15,measure:true});
+    drawRich(g,r1.name||'???',W/2,H*.41,{maxW:W*.88,maxL:2,lh:1.15,base:'#ffffff',align:'center'});
     g.shadowBlur=0;
     if(r1.stat){
       g.font='700 '+Math.round(W*.048)+'px "DM Sans","Mukta",sans-serif';
       g.fillStyle='#e8c96a';
       const n=parseFloat((r1.stat||'').replace(/[^0-9.]/g,''));
-      g.fillText((!isNaN(n)?n.toLocaleString():r1.stat)+(r1.unit?' '+r1.unit:''),W/2,H*.41+nl.length*nmsz*1.15+W*.062);
+      g.fillText((!isNaN(n)?n.toLocaleString():r1.stat)+(r1.unit?' '+r1.unit:''),W/2,H*.41+nM.lines*nmsz*1.15+W*.062);
     }
-    g.font='600 '+Math.round(W*.026)+'px "DM Sans","Mukta",sans-serif';
-    g.fillStyle='rgba(232,201,106,.5)';g.letterSpacing='1px';
-    g.fillText('FOLLOW FOR MORE',W/2,H*.75);
+    g.font='900 '+Math.round(W*.05)+'px "DM Sans","Mukta",sans-serif';
+    g.fillStyle='#e8c96a';g.letterSpacing='2px';
+    g.shadowColor='rgba(0,0,0,.9)';g.shadowBlur=W*.02;
+    g.fillText('FOLLOW FOR MORE 👆',W/2,H*.72);
+    g.shadowBlur=0;
+    g.font='600 '+Math.round(W*.028)+'px "DM Sans","Mukta",sans-serif';
+    g.fillStyle='rgba(245,240,232,.75)';g.letterSpacing='1px';
+    g.fillText('New Top 10 every week',W/2,H*.72+W*.065);
     sharedDrawBottom(g,W,H,1);return;
   }
 
@@ -6003,10 +6123,10 @@ function vRender(frame){
   g.fillStyle='#ffffff';g.textAlign='left';
   g.shadowColor='rgba(0,0,0,1)';g.shadowBlur=W*.028;g.shadowOffsetY=W*.003;
   const nameX=W*.42+slideX;
-  const nl2=sharedWrap(g,item.name||'...',W-.42*W-pp-W*.06,2);
-  nl2.forEach((l,i)=>g.fillText(l,nameX,H*.38+i*nmsz*1.18));
+  const n2M=drawRich(g,item.name||'...',0,0,{maxW:W-.42*W-pp-W*.06,maxL:2,lh:1.18,measure:true});
+  drawRich(g,item.name||'...',nameX,H*.38,{maxW:W-.42*W-pp-W*.06,maxL:2,lh:1.18,base:'#ffffff',reveal:ff});
   g.shadowBlur=0;g.shadowOffsetY=0;
-  var nameBottomY=H*.38+nl2.length*nmsz*1.18;
+  var nameBottomY=H*.38+n2M.lines*nmsz*1.18;
   // Optional sub-line (country/extra) under the name
   if(item.sub){
     var subsz=Math.round(W*.034);
@@ -6025,13 +6145,19 @@ function vRender(frame){
   // STAT — count up
   if(item.stat){
     const statP=ease(clamp((ff-18)/28,0,1));
+    const slam=statP>=1?Math.max(0,1-(ff-46)/8):0;
     g.save();g.globalAlpha=Math.max(0,statP*1.6-.3)*exitA;
     const ssz=Math.round(W*.046);
     g.font='700 '+ssz+'px "DM Sans","Mukta",sans-serif';
     g.fillStyle='#e8c96a';g.textAlign='left';
     const rawN=parseFloat((item.stat||'').replace(/[^0-9.]/g,''));
     const ds=!isNaN(rawN)?Math.round(rawN*statP).toLocaleString()+(item.unit?' '+item.unit:''):item.stat;
-    g.fillText(ds,W*.42+slideX,H*.38+nl2.length*nmsz*1.18+nmsz*.56+ssz);
+    const _sx=W*.42+slideX, _sy=H*.38+n2M.lines*nmsz*1.18+nmsz*.56+ssz;
+    if(slam>0){g.save();g.translate(_sx,_sy);g.scale(1+slam*.09,1+slam*.09);g.translate(-_sx,-_sy);}
+    g.fillText(ds,_sx,_sy);
+    if(slam>0){g.restore();
+      g.strokeStyle='rgba(232,201,106,'+(slam*.45)+')';g.lineWidth=Math.max(2,W*.006*slam);
+      g.beginPath();g.arc(_sx+W*.07,_sy-ssz*.35,W*(.05+(1-slam)*.09),0,Math.PI*2);g.stroke();}
     g.restore();
   }
 
@@ -6043,6 +6169,9 @@ function vRender(frame){
   const barGr=g.createLinearGradient(bX,0,bX+bW,0);
   barGr.addColorStop(0,'#c9334a');barGr.addColorStop(1,'#e8c96a');
   g.fillStyle=barGr;sharedRR(g,bX,bY,bW*(idx+(ff/VT.PER))/_cnt,bH,bH/2);g.fill();
+  const _tipX=bX+bW*(idx+(ff/VT.PER))/_cnt;
+  g.beginPath();g.arc(_tipX,bY+bH/2,bH*1.7,0,Math.PI*2);
+  g.shadowColor='#e8c96a';g.shadowBlur=bH*4;g.fillStyle='#e8c96a';g.fill();g.shadowBlur=0;
   g.font='600 '+Math.round(W*.022)+'px "DM Sans","Mukta",sans-serif';
   g.fillStyle='rgba(232,201,106,.7)';g.textAlign='center';
   g.fillText((idx+1)+' of '+_cnt,W/2,bY+bH+W*.033);
@@ -6096,14 +6225,47 @@ const qCv=document.getElementById('qCv');const qg=qCv.getContext('2d');
 const qS={fmt:'vertical',bg:'himalaya',quizTitle:'Nepal General Knowledge',questions:Array.from({length:5},()=>mkQuizQ()),exportMethod:'zip',raf:null,frame:0,playing:false,busy:false};
 function mkQuizQ(){return{q:'',opts:['','','',''],correct:0,timer:5};}
 function qDur(q){return 30+45+q.timer*FPS+75+20;}
-function qTotal(){return qS.questions.reduce((a,q)=>a+qDur(q),0)+60;}
+function qTotal(){return qS.questions.reduce((a,q)=>a+qDur(q),0)+60+150;} // +150 = follow outro
 function qDim(){return VDIMS[qS.fmt];}
 function qFitCv(){const{W,H}=qDim();const mxW=qCv.parentElement.clientWidth;const mxH=window.innerHeight*.44;let pw,ph;if(W/H>=1){pw=Math.min(mxW,520);ph=pw*(H/W);if(ph>mxH){ph=mxH;pw=ph*(W/H);}}else{ph=Math.min(mxH,420);pw=ph*(W/H);if(pw>mxW){pw=mxW;ph=pw*(H/W);}}qCv.style.width=pw+'px';qCv.style.height=ph+'px';qCv.width=W;qCv.height=H;}
 function qRender(frame){
   const{W,H}=qDim();const g=qg;
-  sharedDrawBg(g,W,H,qS.bg);
+  sharedDrawBg(g,W,H,qS.bg,frame);
+  (function(){const t2=qTotal();const bh=Math.max(4,H*.004);const px2=W*(Math.min(frame||0,t2)/t2);
+    g.fillStyle='rgba(255,255,255,.12)';g.fillRect(0,0,W,bh);
+    g.fillStyle='#e8c96a';g.fillRect(0,0,px2,bh);
+    g.beginPath();g.arc(px2,bh/2,bh*1.7,0,Math.PI*2);
+    g.shadowColor='#e8c96a';g.shadowBlur=bh*4;g.fillStyle='#e8c96a';g.fill();g.shadowBlur=0;})();
   const tot=qTotal();frame=Math.min(frame||0,tot-1);
   const LETS=['A','B','C','D'];
+
+  // ── FOLLOW OUTRO (last 150 frames) ──
+  const outroStart=tot-150;
+  if(frame>=outroStart){
+    const op=ease(clamp((frame-outroStart)/30,0,1));
+    sharedDrawBrand(g,W,H,1);
+    g.save();g.globalAlpha=op;
+    const fsz=Math.round(W*.058);
+    g.font='900 '+fsz+'px "DM Sans","Mukta",sans-serif';
+    g.fillStyle='#e8c96a';g.textAlign='center';
+    g.shadowColor='rgba(0,0,0,.85)';g.shadowBlur=W*.02;
+    g.fillText('कति वटा मिल्यो? 👇',W/2,H*.38);
+    g.fillText('Comment गर्नुस्!',W/2,H*.38+fsz*1.3);
+    g.shadowBlur=0;
+    const csz=Math.round(W*.045);
+    g.font='800 '+csz+'px "DM Sans","Mukta",sans-serif';
+    g.fillStyle='#f5f0e8';
+    g.fillText('FOLLOW 👆 नयाँ Quiz हरेक हप्ता',W/2,H*.56);
+    const bsz=Math.round(W*.028);
+    g.font='600 '+bsz+'px "DM Sans","Mukta",sans-serif';
+    g.fillStyle='rgba(232,201,106,.6)';
+    if('letterSpacing' in g)g.letterSpacing='2px';
+    g.fillText('THE WALKING PARADOX',W/2,H*.62);
+    if('letterSpacing' in g)g.letterSpacing='0px';
+    g.restore();
+    sharedDrawWatermark(g,W,H);
+    return;
+  }
 
   // ── INTRO ──
   if(frame<60){
@@ -6113,12 +6275,12 @@ function qRender(frame){
     g.font='900 '+tsz+'px "DM Sans","Mukta",sans-serif';
     g.fillStyle='#f5f0e8';g.textAlign='center';
     g.shadowColor='rgba(0,0,0,.85)';g.shadowBlur=W*.025;
-    const tl=sharedWrap(g,qS.quizTitle||'Nepal Quiz',W*.82,2);
-    tl.forEach((l,i)=>g.fillText(l,W/2,H*.43+i*tsz*1.2));
+    const qtM=drawRich(g,qS.quizTitle||'Nepal Quiz',0,0,{maxW:W*.82,maxL:2,lh:1.2,measure:true});
+    drawRich(g,qS.quizTitle||'Nepal Quiz',W/2,H*.43,{maxW:W*.82,maxL:2,lh:1.2,base:'#f5f0e8',align:'center',autoLast:true});
     g.shadowBlur=0;
     g.font='700 '+Math.round(W*.028)+'px "DM Sans","Mukta",sans-serif';
     g.fillStyle='rgba(232,201,106,.8)';
-    g.fillText('TEST YOUR KNOWLEDGE',W/2,H*.43+tl.length*tsz*1.2+W*.055);
+    g.fillText('TEST YOUR KNOWLEDGE',W/2,H*.43+qtM.lines*tsz*1.2+W*.055);
     g.restore();sharedDrawBottom(g,W,H,p);return;
   }
 
@@ -6154,8 +6316,7 @@ function qRender(frame){
   g.font='700 '+qSz+'px "DM Sans","Mukta",sans-serif';
   g.fillStyle='#f5f0e8';g.textAlign='center';
   g.shadowColor='rgba(0,0,0,.9)';g.shadowBlur=W*.02;
-  const ql=sharedWrap(g,q.q||'Your question here?',W*.84,3);
-  ql.forEach((l,i)=>g.fillText(l,W/2,H*.2+i*qSz*1.22));
+  drawRich(g,q.q||'Your question here?',W/2,H*.2,{maxW:W*.84,maxL:3,lh:1.22,base:'#f5f0e8',align:'center',autoLast:true,reveal:f});
   g.shadowBlur=0;g.restore();
 
   // ── OPTIONS — tall boxes, large text ──
@@ -6212,10 +6373,10 @@ function qRender(frame){
     g.shadowColor='rgba(0,0,0,.7)';g.shadowBlur=W*.012;
     const textX=badgeX+badgeSz+W*.028;
     const textMaxW=W-textX-pp-W*.05;
-    const otl=sharedWrap(g,opt||'Option '+(i+1),textMaxW,2);
+    const oM=drawRich(g,opt||'Option '+(i+1),0,0,{maxW:textMaxW,maxL:2,lh:1.3,measure:true});
     const lineH=osz*1.3;
-    const startY=oy+oH/2-(otl.length-1)*lineH/2;
-    otl.forEach((l,li)=>g.fillText(l,textX,startY+li*lineH));
+    const startY=oy+oH/2-(oM.lines-1)*lineH/2;
+    drawRich(g,opt||'Option '+(i+1),textX,startY,{maxW:textMaxW,maxL:2,lh:1.3,base:textColor});
     g.shadowBlur=0;
 
     // Correct tick
@@ -6237,16 +6398,15 @@ function qRender(frame){
     const cx=W/2;const cy=H*.35;const r=W*.075;
     const tc=tP>.33?'#e8c96a':'#e03040';
     g.save();
-    // Pulse when under 3s
-    if(secL<=3){
-      const pulse=1+Math.sin(f*.4)*.04;
-      g.translate(cx,cy);g.scale(pulse,pulse);g.translate(-cx,-cy);
-    }
+    // Heartbeat: pulse on every second tick, stronger in the final 3s (deterministic)
+    const beatP=Math.max(0,1-(((f-TIMERT)%FPS)/FPS)*2.2);
+    const pulse=1+beatP*(secL<=3?.07:.035);
+    g.translate(cx,cy);g.scale(pulse,pulse);g.translate(-cx,-cy);
     g.beginPath();g.arc(cx,cy,r,0,Math.PI*2);
     g.strokeStyle='rgba(255,255,255,.1)';g.lineWidth=W*.014;g.stroke();
     g.beginPath();g.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+Math.PI*2*tP);
     g.strokeStyle=tc;g.lineWidth=W*.014;g.lineCap='round';g.stroke();
-    g.font='900 '+Math.round(W*.068)+'px "DM Sans","Mukta",sans-serif';
+    g.font='900 '+Math.round(W*.068*(1+beatP*.08))+'px "DM Sans","Mukta",sans-serif';
     g.fillStyle=tc;g.textAlign='center';g.textBaseline='middle';
     g.fillText(secL,cx,cy);g.textBaseline='alphabetic';
     g.restore();
@@ -7072,12 +7232,35 @@ var AI_PROMPTS = {
 
 var _aiActiveTool = null;
 
+/* ═══ PROMPT CONTRACTS (ported from Story Engine) ═══ */
+var P_VOICE='VOICE CONTRACT (strict): Write like a sharp Nepali friend revealing a secret \u2014 never a textbook, never a news anchor. Short punchy lines. Natural Kathmandu-style Nepali-English mixing. BANNED: "in today\'s world", "delve", "unlock", "game-changer", "let\'s explore", "journey", "amazing", moral-lesson endings, exclamation spam, perfectly formal textbook Nepali. If a line could appear in any generic AI post, rewrite it until it sounds typed by a real person.\nHOOK LANGUAGE RULE: the HOOK / first line / first frame must be in simple ENGLISH (international test audiences see it first \u2014 they must not instantly swipe). Everything after follows the language instruction.';
+var P_ACC='ACCURACY CONTRACT (strict): Use ONLY facts you are highly confident are documented. If you have web access, verify every number and name before output. NEVER invent or estimate a statistic. If a fact is shaky, replace it with a verified one \u2014 do not guess. One wrong fact destroys this page\'s credibility.';
+var P_STEPS='PROCESS \u2014 do these steps silently, show ONLY the final output:\nStep 1: Write 3 different hook angles. Pick the strongest curiosity gap under 10 words.\nStep 2: Draft the full piece using the winning hook.\nStep 3: Self-check: any line that sounds AI-written? any fact you cannot verify? anything too long? Fix all of it.\nStep 4: Output ONLY the final result in the exact format below. No preamble, no explanations, no markdown.';
+var P_MARKS='COLOR-MARK PHRASES for visual rhythm: wrap whole 2-4 word PHRASES \u2014 *gold = key insight*, _red = shock/alarming stat_, +green = positive/truth+. Roughly ONE THIRD of the words should carry color, never everything. Every number MUST be marked. Put THE single most important number in [square brackets] (highlighter box) \u2014 at most once. In myth content wrap the lie in ~tildes~ (struck through).';
+var OPINION_TOOLS={poll:1};
+var RICH_TOOLS={mythfact:1,dyk:1,news:1,top10:1,quiz:1,quote:1,compare:1,hook:1,carousel:1,sage:1};
+window.copyRefinePrompt=function(){
+  var txt='Now audit your output above like a harsh editor, then give me the improved version in the SAME exact format (output nothing else):\n1. HOOK: under 10 words? real curiosity gap? Would a stranger stop scrolling for it?\n2. HUMAN TEST: read every line \u2014 anything that sounds like generic AI gets rewritten in real Nepali-creator voice.\n3. FACT AUDIT: name any claim you are less than fully sure about \u2014 replace it with a stronger verified fact.\n4. RHYTHM: cut filler words, tighten every line, move the color marks onto the most powerful words.\n5. ENDING: does it earn a comment or a share, not just a view? If not, rewrite it.';
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){setToast('\ud83d\udd01 Refine prompt copied \u2014 paste as your NEXT message in the same chat');}).catch(function(){});
+  } else {
+    var ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    setToast('\ud83d\udd01 Refine prompt copied');
+  }
+};
+
 function copyAiPrompt(tool){
   var cfg = AI_PROMPTS[tool];
   if(!cfg) return;
+  var base = cfg.prompt;
+  if(typeof base === 'function') base = base();
+  if(!base) return;
   var langNote = (typeof WP_LANG!=='undefined' && WP_LANG==='en')
     ? '\n\nIMPORTANT: Write everything in ENGLISH only (global audience).'
     : '\n\nIMPORTANT: Write in mixed Nepali/English (Nepali audience).';
+  var head = P_VOICE + '\n\n' + (OPINION_TOOLS[tool] ? '' : (P_ACC + '\n\n')) + P_STEPS + '\n\n';
+  var marks = RICH_TOOLS[tool] ? ('\n\n' + P_MARKS) : '';
+  var assembled = head + base + marks + langNote;
   var doCopy = function(txt){
     if(navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(txt).then(function(){
@@ -7092,7 +7275,7 @@ function copyAiPrompt(tool){
     document.body.removeChild(ta);
     setToast('📋 Prompt copied!');
   };
-  doCopy(cfg.prompt + langNote);
+  doCopy(assembled);
 }
 window.copyAiPrompt = copyAiPrompt;
 
@@ -7143,6 +7326,12 @@ function injectAiButtons(){
       '<button onclick="copyAiPrompt(\''+tool+'\')" style="padding:11px 6px;min-height:44px;border-radius:8px;background:rgba(232,201,106,.1);border:1.5px solid rgba(232,201,106,.35);color:var(--gd);font-family:\'DM Sans\',sans-serif;font-size:11px;font-weight:700;cursor:pointer">📋 Copy AI Prompt</button>'+
       '<button onclick="openAiPaste(\''+tool+'\')" style="padding:11px 6px;min-height:44px;border-radius:8px;background:rgba(62,207,142,.08);border:1.5px solid rgba(62,207,142,.3);color:#3ecf8e;font-family:\'DM Sans\',sans-serif;font-size:11px;font-weight:700;cursor:pointer">📥 Paste Result</button>';
     inner.insertBefore(row, inner.firstChild);
+    var refBtn = document.createElement('button');
+    refBtn.className = 'ai-refine';
+    refBtn.style.cssText = 'width:100%;padding:9px 6px;min-height:38px;border-radius:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.15);color:#a09b8e;font-family:\'DM Sans\',sans-serif;font-size:10px;font-weight:700;cursor:pointer;margin-bottom:6px';
+    refBtn.textContent = '🔁 Copy REFINE prompt (paste after the AI answers)';
+    refBtn.onclick = function(){ copyRefinePrompt(); };
+    inner.insertBefore(refBtn, row.nextSibling);
   });
 }
 
@@ -7217,6 +7406,49 @@ function loadImageSafe(srcOrFile, callback){
   return img;
 }
 window.loadImageSafe = loadImageSafe;
+
+
+// ═══════════════════════════════════════════════════
+// SERIES BADGE — "EP N" pill, the strongest follow trigger
+// Set once, appears on all cards until changed. Empty = hidden.
+// ═══════════════════════════════════════════════════
+var SERIES_BADGE = (function(){ try{ return localStorage.getItem('wp_series')||''; }catch(e){ return ''; } })();
+
+function setSeriesBadge(){
+  var v = prompt('Series badge text (e.g. "EP 12" or "Part 3").\nLeave empty to hide.', SERIES_BADGE);
+  if(v===null) return;
+  SERIES_BADGE = (v||'').trim().slice(0,12);
+  try{ localStorage.setItem('wp_series', SERIES_BADGE); }catch(e){}
+  setToast(SERIES_BADGE ? '🔢 Series badge: '+SERIES_BADGE : 'Series badge hidden');
+  // re-render active tool
+  try{
+    var R={poll:function(){POLL.render();},hook:function(){HOOK.render();},
+      mythfact:function(){MYTHFACT.render(MYTHFACT.state.frame||0);},
+      script:function(){SCRIPT.render(SCRIPT.state.frame||0);},
+      top10:function(){vRender(vS.frame||0);},quiz:function(){qRender(qS.frame||0);},
+      dyk:function(){DYK.render(DYK.state.frame||0);},react:function(){REACT.render();},
+      news:function(){nRender();},sage:function(){SAGE.render(SAGE.state.frame||0);}};
+    if(R[activeTool])R[activeTool]();
+  }catch(e){}
+}
+window.setSeriesBadge = setSeriesBadge;
+
+function drawSeriesBadge(g,W,H){
+  if(!SERIES_BADGE) return;
+  g.save();
+  var bsz=Math.round(W*.028);
+  g.font='800 '+bsz+'px "DM Sans","Mukta",sans-serif';
+  var tw=g.measureText(SERIES_BADGE).width;
+  var padX=W*.02, padY=W*.012;
+  var bw=tw+padX*2, bh=bsz+padY*2;
+  var bx=W-bw-W*.05, by=H*.035;
+  g.fillStyle='rgba(232,201,106,.92)';
+  if(typeof sharedRR==='function'){ sharedRR(g,bx,by,bw,bh,bh/2); g.fill(); }
+  else g.fillRect(bx,by,bw,bh);
+  g.fillStyle='#0c0d15';g.textAlign='center';
+  g.fillText(SERIES_BADGE,bx+bw/2,by+bh-padY-bsz*.15);
+  g.restore();
+}
 
 // ═══════════════════════════════════════════════════
 // SAFE ZONES — TikTok/Instagram UI boundary overlay
@@ -7458,11 +7690,11 @@ var QC = (function(){
     g2.fillStyle=pal.quoteColor;g2.textAlign='left';
     g2.shadowColor='rgba(0,0,0,.5)';g2.shadowBlur=W*.015;
     var qX=pp+W*.1;var qMaxW=W*.82-pp;
-    var qLines=sharedWrap(g2,quoteTxt,qMaxW,12);
+    var qM=drawRich(g2,quoteTxt,0,0,{maxW:qMaxW,maxL:12,lh:1.45,measure:true});
     var lineH=qSz*1.45;
-    var totalQH=qLines.length*lineH;
+    var totalQH=qM.height;
     var startY=H*.5-totalQH/2+qSz*.5;
-    qLines.forEach(function(l,i){g2.fillText(l,qX,startY+i*lineH);});
+    drawRich(g2,quoteTxt,qX,startY,{maxW:qMaxW,maxL:12,lh:1.45,base:pal.quoteColor});
     g2.shadowBlur=0;
     var sepY=startY+totalQH+qSz*.6;
     var sepGr=g2.createLinearGradient(qX,0,qX+W*.25,0);
@@ -7706,16 +7938,16 @@ const DYK = (() => {
     var tSz = Math.round(W*.046);
     var factTxt = fact.text||'Your fact here...';
     g.font='600 '+tSz+'px "DM Sans","Mukta",sans-serif';
-    var fLines = sharedWrap(g, factTxt, cardW-W*.06, 9);
+    var fM = drawRich(g, factTxt, 0, 0, {maxW:cardW-W*.06, maxL:9, lh:1.5, measure:true});
     // If too many lines, shrink font until it fits ~7 lines
     var shrinkGuard=0;
-    while(fLines.length>7 && tSz>22 && shrinkGuard<6){
+    while(fM.lines>7 && tSz>22 && shrinkGuard<6){
       tSz=Math.round(tSz*0.9);
       g.font='600 '+tSz+'px "DM Sans","Mukta",sans-serif';
-      fLines = sharedWrap(g, factTxt, cardW-W*.06, 9);
+      fM = drawRich(g, factTxt, 0, 0, {maxW:cardW-W*.06, maxL:9, lh:1.5, measure:true});
       shrinkGuard++;
     }
-    const cardH = fLines.length*tSz*1.5+W*.06;
+    const cardH = fM.height+W*.06;
 
     // Card background
     sharedRR(g,cardX,cardY,cardW,cardH,W*.02);
@@ -7728,9 +7960,8 @@ const DYK = (() => {
 
     // Fact text
     g.font='600 '+tSz+'px "DM Sans","Mukta",sans-serif';
-    g.fillStyle=pal.textColor; g.textAlign='left';
     g.shadowColor='rgba(0,0,0,.6)'; g.shadowBlur=W*.012;
-    fLines.forEach((l,i)=>g.fillText(l, cardX+W*.055, cardY+tSz*1.1+i*tSz*1.5));
+    drawRich(g, factTxt, cardX+W*.055, cardY+tSz*1.1, {maxW:cardW-W*.06, maxL:9, lh:1.5, base:pal.textColor});
     g.shadowBlur=0;
 
     g.restore();
@@ -8119,9 +8350,8 @@ const COMPARE = (() => {
       g.font='500 '+fsz+'px "DM Sans","Mukta",sans-serif';
       g.fillStyle='rgba(240,235,225,.85)';g.textAlign=align;
       g.shadowColor='rgba(0,0,0,.6)';g.shadowBlur=W*.01;
-      var lines=sharedWrap(g,fact||'...',maxW,4);
       var startY=stat&&stat.trim()?H*.52:H*.42;
-      lines.forEach(function(l,i){g.fillText(l,cx,startY+i*fsz*1.5);});
+      drawRich(g,fact||'...',cx,startY,{maxW:maxW,maxL:4,lh:1.5,base:'rgba(240,235,225,.85)',align:align});
       g.shadowBlur=0;
 
       // Accent dot
@@ -8288,17 +8518,15 @@ const PARADOX = (() => {
 
     // The paradox text - centered, large
     var tSz=Math.round(W*.058);
-    var font='700 '+tSz+'px "Playfair Display",serif';
+    var font='700 '+tSz+'px "Playfair Display","Mukta",serif';
     g.font=font;
-    var lines=sharedWrap(g,state.text||'A paradox...',W*.78,6);
+    var pM=drawRich(g,state.text||'A paradox...',0,0,{maxW:W*.78,maxL:6,lh:1.5,measure:true});
     var lineH=tSz*1.5;
-    var totalH=lines.length*lineH;
+    var totalH=pM.height;
     var startY=H*.5-totalH/2+tSz*.5;
 
-    g.textAlign='center';
-    g.fillStyle=pal.textColor;
     g.shadowColor='rgba(0,0,0,.7)';g.shadowBlur=W*.018;g.shadowOffsetY=W*.003;
-    lines.forEach(function(l,i){g.fillText(l,W/2,startY+i*lineH);});
+    drawRich(g,state.text||'A paradox...',W/2,startY,{maxW:W*.78,maxL:6,lh:1.5,base:pal.textColor,align:'center'});
     g.shadowBlur=0;g.shadowOffsetY=0;
 
     // Accent line below text
@@ -8522,18 +8750,12 @@ const HOOK = (() => {
     // Main hook text - massive
     var hsz=Math.round((state.headSize||75)*(W/1080));
     g.font='900 '+hsz+'px "'+(state.headFont||'DM Sans')+'","Mukta",sans-serif';
-    var lines=sharedWrap(g,state.text||'Your hook here',W*.84,5);
-    var totalH=lines.length*hsz*1.25;
+    var hkM=drawRich(g,state.text||'Your hook here',0,0,{maxW:W*.84,maxL:5,lh:1.25,measure:true});
+    var totalH=hkM.height;
     var startY=H*.5-totalH/2+hsz*.5;
-    g.textAlign='center';
     g.shadowColor='rgba(0,0,0,.95)';g.shadowBlur=W*.025;g.shadowOffsetY=W*.004;
     var hookColor=state.headColor||'#f5f0e8';
-    lines.forEach(function(l,i){
-      var y=startY+i*hsz*1.25;
-      g.fillStyle=hookColor;
-
-      g.fillText(l,W/2,y);
-    });
+    drawRich(g,state.text||'Your hook here',W/2,startY,{maxW:W*.84,maxL:5,lh:1.25,base:hookColor,align:'center',autoLast:true});
     g.shadowBlur=0;g.shadowOffsetY=0;
 
     // Accent line
@@ -9307,15 +9529,13 @@ var CAROUSEL = (function(){
     g2.shadowBlur = W*.02;
     var hX = pp+W*.07;
     var hMaxW = W*.86-pp;
-    var hLines = sharedWrap(g2, headTxt, hMaxW, 8);
+    var chM = drawRich(g2, headTxt, 0, 0, {maxW:hMaxW, maxL:8, lh:1.3, measure:true});
     var hY = H * (state.fmt==='story' ? .32 : .30);
-    hLines.forEach(function(line,i){
-      g2.fillText(line, hX, hY + i*hSz*1.3);
-    });
+    drawRich(g2, headTxt, hX, hY, {maxW:hMaxW, maxL:8, lh:1.3, base:state.headColor||pal.headline, autoLast:true});
     g2.shadowBlur = 0;
 
     // Accent rule between headline and body
-    var ruleY = hY + hLines.length*hSz*1.3 + hSz*.5;
+    var ruleY = hY + chM.height + hSz*.5;
     var ruleGr = g2.createLinearGradient(hX,0,hX+W*.35,0);
     ruleGr.addColorStop(0, pal.accent); ruleGr.addColorStop(1,'rgba(0,0,0,0)');
     g2.fillStyle = ruleGr;
@@ -9328,10 +9548,7 @@ var CAROUSEL = (function(){
       g2.fillStyle = state.bodyColor||pal.body;
       g2.textAlign = 'left';
       var bY = ruleY + bSz*1.6;
-      var bLines = sharedWrap(g2, slide.body, hMaxW, 12);
-      bLines.forEach(function(line,i){
-        g2.fillText(line, hX, bY + i*bSz*1.55);
-      });
+      drawRich(g2, slide.body, hX, bY, {maxW:hMaxW, maxL:12, lh:1.55, base:state.bodyColor||pal.body});
     }
 
     // Bottom strip
@@ -10727,8 +10944,7 @@ var MYTHFACT = (function(){
       var tsz=Math.round(W*.034);
       g2.font='600 '+tsz+'px "DM Sans","Mukta",sans-serif';
       g2.fillStyle=p.topic;g2.textAlign='center';
-      var tl=sharedWrap(g2,state.topic,W*.8,2);
-      tl.forEach(function(l,i){g2.fillText(l,W/2,H*.13+i*tsz*1.2);});
+      drawRich(g2,state.topic,W/2,H*.13,{maxW:W*.8,maxL:2,lh:1.2,base:p.topic,align:'center',autoLast:true});
     }
 
     // ── INTRO (topic only, building) ──
@@ -10760,8 +10976,9 @@ var MYTHFACT = (function(){
     var mythP=ease(Math.min(fa/24,1));
     var mythSlide=(1-mythP)*W*.08;
     var mythY=H*.26;
-    var mythLines=sharedWrap(g2,state.myth||'The false belief...',cardW*.84,5);
-    var mythBodyH=mythLines.length*bodySz*1.35;
+    g2.font='600 '+bodySz+'px "DM Sans","Mukta",sans-serif';
+    var _mfMythTxt=state.myth||'The false belief...';
+    var mythBodyH=drawRich(g2,_mfMythTxt,0,0,{maxW:cardW*.84,maxL:5,lh:1.35,measure:true}).height;
     var mythCardH=labelSz*1.8+mythBodyH+W*.06;
 
     g2.globalAlpha=mythP;
@@ -10778,10 +10995,7 @@ var MYTHFACT = (function(){
     if('letterSpacing' in g2)g2.letterSpacing='0px';
     // Body
     g2.font='600 '+bodySz+'px "DM Sans","Mukta",sans-serif';
-    g2.fillStyle=p.badText;g2.textAlign='left';
-    mythLines.forEach(function(l,i){
-      g2.fillText(l,cardX-mythSlide+W*.04,mythY+labelSz*1.8+W*.05+i*bodySz*1.35);
-    });
+    drawRich(g2,_mfMythTxt,cardX-mythSlide+W*.04,mythY+labelSz*1.8+W*.05,{maxW:cardW*.84,maxL:5,lh:1.35,base:p.badText});
     g2.globalAlpha=1;
 
     // ── "but actually..." connector + FACT CARD (bottom) ──
@@ -10798,8 +11012,9 @@ var MYTHFACT = (function(){
       g2.fillText(t('connector_but'),W/2,mythY+mythCardH+W*.06);
 
       var factY=mythY+mythCardH+W*.1;
-      var factLines=sharedWrap(g2,state.fact||'The actual truth...',cardW*.84,5);
-      var factBodyH=factLines.length*bodySz*1.35;
+      g2.font='600 '+bodySz+'px "DM Sans","Mukta",sans-serif';
+      var _mfFactTxt=state.fact||'The actual truth...';
+      var factBodyH=drawRich(g2,_mfFactTxt,0,0,{maxW:cardW*.84,maxL:5,lh:1.35,measure:true}).height;
       var factCardH=labelSz*1.8+factBodyH+W*.06;
 
       g2.fillStyle=p.goodBg;
@@ -10814,10 +11029,7 @@ var MYTHFACT = (function(){
       if('letterSpacing' in g2)g2.letterSpacing='0px';
 
       g2.font='600 '+bodySz+'px "DM Sans","Mukta",sans-serif';
-      g2.fillStyle=p.goodText;g2.textAlign='left';
-      factLines.forEach(function(l,i){
-        g2.fillText(l,cardX+factSlide+W*.04,factY+labelSz*1.8+W*.05+i*bodySz*1.35);
-      });
+      drawRich(g2,_mfFactTxt,cardX+factSlide+W*.04,factY+labelSz*1.8+W*.05,{maxW:cardW*.84,maxL:5,lh:1.35,base:p.goodText});
       g2.globalAlpha=1;
     }
 
@@ -11087,18 +11299,16 @@ var SAGE = (function(){
     var qWrapped, qLineH, fitGuard=0;
     do{
       g2.font=qStyleStr+qWeightStr+' '+qsz+'px "DM Sans","Mukta",sans-serif';
-      qWrapped=sharedWrap(g2,'\u201C'+qTxt+'\u201D',qMaxW,12);
+      qWrapped=drawRich(g2,'\u201C'+qTxt+'\u201D',0,0,{maxW:qMaxW,maxL:12,lh:1.4,measure:true});
       qLineH=qsz*1.4;
-      if(qWrapped.length*qLineH<=availH || qsz<=Math.round(W*.028)) break;
+      if(qWrapped.height<=availH || qsz<=Math.round(W*.028)) break;
       qsz=Math.round(qsz*0.92);
       fitGuard++;
     }while(fitGuard<8);
     var slideY=(1-quoteP)*W*.03;
-    qWrapped.forEach(function(l,i){
-      g2.fillText(l,cX,quoteY+i*qLineH+slideY);
-    });
+    drawRich(g2,'\u201C'+qTxt+'\u201D',cX,quoteY+slideY,{maxW:qMaxW,maxL:12,lh:1.4,base:g2.fillStyle,align:'center'});
     g2.restore();
-    var quoteBottom=quoteY+qWrapped.length*qLineH;
+    var quoteBottom=quoteY+qWrapped.height;
 
     // ── Reflection sub-line ──
     if(state.sub){
@@ -11109,13 +11319,11 @@ var SAGE = (function(){
       g2.font=sStyle+sWeight+' '+ssz+'px "DM Sans","Mukta",sans-serif';
       g2.fillStyle=SCOLORS[state.subColor]||'rgba(200,195,185,.75)';g2.textAlign='center';
       var sMaxW = state.safe ? W*.72 : W*.82;
-      var sWrapped=sharedWrap(g2,'\u201C'+state.sub+'\u201D',sMaxW,6);
+      var sM=drawRich(g2,'\u201C'+state.sub+'\u201D',0,0,{maxW:sMaxW,maxL:6,lh:1.5,measure:true});
       var sLineH=ssz*1.5;
-      sWrapped.forEach(function(l,i){
-        g2.fillText(l,cX,quoteBottom+W*.07+i*sLineH);
-      });
+      drawRich(g2,'\u201C'+state.sub+'\u201D',cX,quoteBottom+W*.07,{maxW:sMaxW,maxL:6,lh:1.5,base:SCOLORS[state.subColor]||'rgba(200,195,185,.75)',align:'center'});
       g2.restore();
-      quoteBottom += W*.07+sWrapped.length*sLineH;
+      quoteBottom += W*.07+sM.height;
     }
 
     // ── Bottom emoji ──

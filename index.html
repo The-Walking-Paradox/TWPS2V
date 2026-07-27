@@ -2815,6 +2815,16 @@ min-height:48px;}
       </div>
 
       <div>
+        <div class="sec-lbl">Item Images 🖼</div>
+        <label class="lbl">Upload photos (list order — item 1 first)</label>
+        <input class="fi" type="file" id="vImgFiles" accept="image/*" multiple onchange="T10IMG.attach(this.files)"/>
+        <label class="lbl">Pexels key (auto-fetch missing by item name · shared with Story Engine)</label>
+        <input class="fi" id="vPxKey" placeholder="paste once — saved on this device" onchange="T10IMG.saveKey(this.value)"/>
+        <button style="width:100%;margin-top:8px;padding:11px;border-radius:9px;background:rgba(232,201,106,.12);border:1.5px solid rgba(232,201,106,.4);color:#e8c96a;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;min-height:42px" onclick="T10IMG.load()">🖼 Load images (tap before preview / export)</button>
+        <div id="vImgStatus" style="font-size:11px;color:#a09b8e;margin-top:6px;line-height:1.5"></div>
+      </div>
+
+      <div>
         <div class="sec-lbl">List Settings</div>
         <label class="lbl">List Title</label>
         <input class="fi" id="vListTitle" value="Top 10 Cities in Nepal" placeholder="e.g. Top 10 Cities in Nepal" oninput="vS.listTitle=this.value"/>
@@ -4109,6 +4119,38 @@ function sharedDrawBg(g,W,H,bgKey,f){
       g.fill();
     }
   }
+}
+/* sharedDrawDust — living-background overlay that works on ANY background.
+   Call right after the tool draws its own bg. Deterministic (same frame = same
+   output) so ZIP/MP4 export matches preview exactly.
+   g,W,H = canvas ctx + size. f = frame number. opts:
+     {count:16, alpha:1, color:'232,201,106', glow:true, drift:true} */
+function sharedDrawDust(g,W,H,f,opts){
+  if(f===undefined||f===null)f=0;
+  opts=opts||{};
+  var count=opts.count||16;
+  var a=opts.alpha===undefined?1:opts.alpha;
+  var col=opts.color||'232,201,106';
+  if(a<=0)return;
+  g.save();
+  // Drifting radial glow — slow breathing movement
+  if(opts.glow!==false){
+    var gx=W*(.5+.07*Math.sin(f*.008)), gy=H*(.44+.045*Math.cos(f*.006));
+    var rg=g.createRadialGradient(gx,gy,0,gx,gy,W*.85);
+    rg.addColorStop(0,'rgba('+col+','+(0.07*a)+')');
+    rg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=rg;g.fillRect(0,0,W,H);
+  }
+  // Floating dust motes rising up the frame
+  for(var di=0;di<count;di++){
+    var spd=.4+.9*prand(di+50);
+    var py=H*1.05-((f*spd+prand(di+99)*H*1.1)%(H*1.1));
+    var px=W*prand(di)+Math.sin(f*.012+di*1.7)*W*.012;
+    g.beginPath();g.arc(px,py,1.2+2.2*prand(di+7),0,Math.PI*2);
+    g.fillStyle='rgba('+col+','+((0.04+0.1*prand(di+13))*a)+')';
+    g.fill();
+  }
+  g.restore();
 }
 function sharedDrawMtn(g,W,H){
   const mH=H*.22,sY=H-mH;
@@ -6056,6 +6098,7 @@ function vRender(frame){
   if(frame>=VT.INTRO+_cnt*VT.PER){
     sharedDrawBrand(g,W,H,1);
     const r1=_items[_cnt-1]||_items[0]||vS.items[0]||{name:'',stat:'',unit:'',sub:''};
+    if(T10_POOL[_cnt-1]){coverKB(g,T10_POOL[_cnt-1],W,H,Math.min((frame-(VT.INTRO+_cnt*VT.PER))/VT.OUTRO,1),99);}
     g.textAlign='center';
     const lsz=Math.round(W*.035);
     g.font='700 '+lsz+'px "DM Sans","Mukta",sans-serif';
@@ -6098,6 +6141,7 @@ function vRender(frame){
   g.fillStyle=sw;g.fillRect(0,0,W,H);
 
   sharedDrawBrand(g,W,H,1);
+  if(T10_POOL[idx]){coverKB(g,T10_POOL[idx],W,H,ff/VT.PER,idx+1);}
 
   const exitA=1-ease(clamp((ff-VT.PER*.82)/(VT.PER*.18),0,1));
   const pp=pip(W);
@@ -7676,6 +7720,7 @@ var QC = (function(){
     W=cv.width;H=cv.height;
     var pp=pip(W);
     pal.bg(g2,W,H);
+    if(state.style!=='minimal') sharedDrawDust(g2,W,H,90,{count:12,alpha:.7});
     var qmSz=Math.round(W*.22);
     g2.font='900 '+qmSz+'px "Playfair Display",serif';
     g2.fillStyle='rgba(232,201,106,.06)';g2.textAlign='left';
@@ -8185,12 +8230,13 @@ const SHLOKA = (() => {
       g2.font='400 '+mSz+'px "DM Sans","Mukta",sans-serif';
       g2.fillStyle='rgba(240,235,225,.82)';g2.textAlign='center';
       g2.shadowColor='rgba(0,0,0,.6)';g2.shadowBlur=W*.012;
-      const mLines=sharedWrap(g2,state.meaning,W*.78,4);
+      const mM=drawRich(g2,state.meaning,0,0,{maxW:W*.78,maxL:4,lh:1.6,measure:true});
       const mStartY=H*.65;
-      const mBg=g2.createLinearGradient(0,mStartY-W*.02,0,mStartY+mLines.length*mSz*1.6+W*.04);
+      const mBg=g2.createLinearGradient(0,mStartY-W*.02,0,mStartY+mM.height+W*.04);
       mBg.addColorStop(0,'rgba(0,0,0,0)');mBg.addColorStop(.3,'rgba(0,0,0,.55)');mBg.addColorStop(1,'rgba(0,0,0,.75)');
-      g2.fillStyle=mBg;g2.fillRect(W*.06,mStartY-W*.02,W*.88,mLines.length*mSz*1.6+W*.04);
-      mLines.forEach((l,i)=>g2.fillText(l,W/2,mStartY+mSz+i*mSz*1.6));
+      g2.fillStyle=mBg;g2.fillRect(W*.06,mStartY-W*.02,W*.88,mM.height+W*.04);
+      drawRich(g2,state.meaning,W/2,mStartY+mSz,
+        {maxW:W*.78,maxL:4,lh:1.6,base:'rgba(240,235,225,.82)',align:'center'});
       g2.shadowBlur=0;
     }
     if(state.source&&state.source.trim()){
@@ -8488,6 +8534,7 @@ const PARADOX = (() => {
     var pp=pip(W);
 
     pal.bg(g,W,H);
+    if(state.mood!=='minimal') sharedDrawDust(g,W,H,60,{count:12,alpha:.65});
 
     if(pal.pip){
       g.fillStyle='#c9334a';g.fillRect(0,0,pp,H*.5);
@@ -8624,6 +8671,7 @@ const POLL = (() => {
     var bg=g.createLinearGradient(0,0,W*.2,H);
     bg.addColorStop(0,pal.bg1);bg.addColorStop(1,pal.bg2);
     g.fillStyle=bg;g.fillRect(0,0,W,H);
+    sharedDrawDust(g,W,H,120,{count:14,alpha:.75});
     g.fillStyle='#c9334a';g.fillRect(0,0,pp,H*.5);
     g.fillStyle='#4a7fc0';g.fillRect(0,H*.5,pp,H*.5);
     sharedDrawBrand(g,W,H,1);
@@ -8631,10 +8679,10 @@ const POLL = (() => {
     // Question
     var qsz=Math.round(W*.054);
     g.font='700 '+qsz+'px "'+(state.headFont||'DM Sans')+'","Mukta",sans-serif';
-    g.fillStyle=pal.qColor;g.textAlign='center';
+    g.textAlign='center';
     g.shadowColor='rgba(0,0,0,.8)';g.shadowBlur=W*.018;
-    var qlines=sharedWrap(g,state.question||'Your question?',W*.82,4);
-    qlines.forEach(function(l,i){g.fillText(l,W/2,H*.28+i*qsz*1.3);});
+    drawRich(g,state.question||'Your question?',W/2,H*.28,
+      {maxW:W*.82,maxL:4,lh:1.3,base:pal.qColor,align:'center'});
     g.shadowBlur=0;
 
     // Option boxes
@@ -9480,6 +9528,8 @@ var CAROUSEL = (function(){
 
     // Background
     pal.bg(g2, W, H);
+    // vary seed per slide so a swipe set doesn't look like the same card repeated
+    sharedDrawDust(g2, W, H, 70 + idx*47, {count:13, alpha:.7});
 
     // Nepal pip
     g2.fillStyle='#c9334a'; g2.fillRect(0,0,pp,H*.5);
@@ -9972,6 +10022,7 @@ var REACT = (function(){
 
     // Background
     pal.bg(g2,W,H);
+    sharedDrawDust(g2,W,H,140,{count:14,alpha:.8});
 
     // Nepal pip
     g2.fillStyle='#c9334a';g2.fillRect(0,0,pp,H*.5);
@@ -10029,11 +10080,32 @@ var REACT = (function(){
       curY=curY+tagH2+H*.025;
     }
 
-    // Body text — uses state.textSize
+    // Body text — paragraph-aware colouring + semantic markup (*gold* _red_ +green+ [box])
     var bodyTxt=state.body && state.body.trim() ? state.body : '';
     var bSz=Math.round((state.textSize||38)*(W/1080));
-    g2.font='400 '+bSz+'px "DM Sans","Mukta",sans-serif';
-    var lines=sharedWrap(g2,bodyTxt,contentW,60);
+
+    // Split into paragraphs, assign each a base colour from its prefix.
+    // Previously the ✅/❌ colour only hit the FIRST wrapped line of a paragraph —
+    // continuation lines fell back to grey. Colouring per paragraph fixes that.
+    var _defBody=state.textColor||'rgba(210,203,190,.9)';
+    var paras=(bodyTxt||'').split(/\n/).map(function(p){
+      var t=p.trim();
+      if(!t)return null;                      // blank line = vertical spacer
+      var fc=t.charAt(0), base=_defBody;
+      if(fc==='✅'||fc==='👍'||t.indexOf('सकारात')===0)      base='rgba(100,220,140,.9)';
+      else if(fc==='❌'||fc==='⚠'||t.indexOf('चुनौत')===0)  base='rgba(255,160,100,.9)';
+      return {txt:p, base:base};
+    });
+
+    function measureParas(){
+      var h=0;
+      g2.font='400 '+bSz+'px "DM Sans","Mukta",sans-serif';
+      paras.forEach(function(p){
+        if(!p){h+=bSz*.7;return;}
+        h+=drawRich(g2,p.txt,0,0,{maxW:contentW,maxL:60,lh:1.65,measure:true}).height;
+      });
+      return h;
+    }
 
     // Available space — reserve room for question box if present
     var hasQ=state.question&&state.question.trim();
@@ -10041,31 +10113,23 @@ var REACT = (function(){
     var availH=H*.88-curY-qReserve;
 
     // Safety shrink only if massively over
-    var totalTextH=lines.length*bSz*1.65;
+    var totalTextH=measureParas();
     if(totalTextH>availH*1.3){
       for(var a=0;a<6;a++){
         bSz=Math.round(bSz*.88);
-        g2.font='400 '+bSz+'px "DM Sans","Mukta",sans-serif';
-        lines=sharedWrap(g2,bodyTxt,contentW,60);
-        if(lines.length*bSz*1.65<=availH*1.1||bSz<=14)break;
+        totalTextH=measureParas();
+        if(totalTextH<=availH*1.1||bSz<=14)break;
       }
     }
 
-    var lineH=bSz*1.65;
+    g2.font='400 '+bSz+'px "DM Sans","Mukta",sans-serif';
     g2.textAlign='left';
     g2.shadowColor='rgba(0,0,0,.5)';g2.shadowBlur=W*.008;
-    lines.forEach(function(line,i){
-      if(!line.trim())return;
-      // Smart color coding
-      var fc=line.trim().charAt(0);
-      if(fc==='✅'||fc==='👍'||line.trim().indexOf('सकारात')===0){
-        g2.fillStyle='rgba(100,220,140,.9)';
-      } else if(fc==='❌'||fc==='⚠'||line.trim().indexOf('चुनौती')===0||line.trim().indexOf('चुनौत')===0){
-        g2.fillStyle='rgba(255,160,100,.9)';
-      } else {
-        g2.fillStyle=state.textColor||'rgba(210,203,190,.9)';
-      }
-      g2.fillText(line,contentX,curY+i*lineH+bSz);
+    var _py=curY+bSz;
+    paras.forEach(function(p){
+      if(!p){_py+=bSz*.7;return;}
+      var r=drawRich(g2,p.txt,contentX,_py,{maxW:contentW,maxL:60,lh:1.65,base:p.base});
+      _py+=r.height;
     });
     g2.shadowBlur=0;
 
@@ -10075,9 +10139,9 @@ var REACT = (function(){
       // Measure lines first so we can position from the bottom up
       var qSz = Math.round((state.textSize||38)*(W/1080)*.82);
       g2.font = '600 '+qSz+'px "DM Sans","Mukta",sans-serif';
-      var qLines = sharedWrap(g2, state.question, contentW, 3);
+      var qM = drawRich(g2, state.question, 0, 0, {maxW:contentW, maxL:3, lh:1.55, measure:true});
       var qLineH = qSz * 1.55;
-      var qTotalH = qLines.length * qLineH + qSz;
+      var qTotalH = qM.height + qSz;
       // Position so question ends at H*0.905 — always above bottom strip
       var qY = H*0.905 - qTotalH;
       // Dark fade behind question
@@ -10094,9 +10158,8 @@ var REACT = (function(){
       g2.textAlign = 'left';
       g2.shadowColor = 'rgba(0,0,0,.85)';
       g2.shadowBlur = W*.012;
-      qLines.forEach(function(ql, qi){
-        g2.fillText(ql, contentX, qY + qSz*1.1 + qi*qLineH);
-      });
+      drawRich(g2, state.question, contentX, qY + qSz*1.1,
+        {maxW:contentW, maxL:3, lh:1.55, base:(state.qColor || pal.tag)});
       g2.shadowBlur = 0;
     }
 
@@ -10622,6 +10685,7 @@ var SCRIPT = (function(){
 
     // Background + pip every frame
     pal.bg(g2,W,H);
+    sharedDrawDust(g2,W,H,frame,{count:18});
     g2.fillStyle='#c9334a';g2.fillRect(0,0,pp,H*.5);
     g2.fillStyle='#4a7fc0';g2.fillRect(0,H*.5,pp,H*.5);
 
@@ -10701,26 +10765,32 @@ var SCRIPT = (function(){
     var tsz=len<50?Math.round(W*.062):len<110?Math.round(W*.052):len<200?Math.round(W*.044):Math.round(W*.037);
     g2.font='700 '+tsz+'px "DM Sans","Mukta",sans-serif';
     var contentW=W*.82-pp;
-    var lines=sharedWrap(g2,text,contentW,14);
+    var sM=drawRich(g2,text,0,0,{maxW:contentW,maxL:14,lh:1.5,measure:true});
     // Shrink if overflows
     var safety=0;
-    while(lines.length*tsz*1.5 > H*.55 && tsz>24 && safety<6){
+    while(sM.height > H*.55 && tsz>24 && safety<6){
       tsz=Math.round(tsz*.88);
       g2.font='700 '+tsz+'px "DM Sans","Mukta",sans-serif';
-      lines=sharedWrap(g2,text,contentW,16);
+      sM=drawRich(g2,text,0,0,{maxW:contentW,maxL:16,lh:1.5,measure:true});
       safety++;
     }
 
     var lineH=tsz*1.5;
-    var blockH=lines.length*lineH;
+    var blockH=sM.height;
     var startY=H*.5-blockH/2+tsz*.5+slideY;
 
     g2.globalAlpha=alpha;
     g2.textAlign='center';
     g2.shadowColor='rgba(0,0,0,.85)';g2.shadowBlur=W*.018;
-    g2.fillStyle=pal.text;
-    lines.forEach(function(l,i){
-      g2.fillText(l,W/2+pp/2,startY+i*lineH);
+    // Word-by-word reveal. drawRich staggers each token by 2 frames (+6 to fade in),
+    // so a long scene would still be appearing as it exits. Scale the clock so every
+    // scene finishes revealing in the same ~45 frame window regardless of word count.
+    var _tokN=(text.match(/\S+/g)||[]).length;
+    var _revScale=Math.max(1,(_tokN*2+6)/45);
+    drawRich(g2,text,W/2+pp/2,startY,{
+      maxW:contentW, maxL:16, lh:1.5,
+      base:pal.text, accent:pal.accent,
+      align:'center', autoLast:true, reveal:ff*_revScale
     });
     g2.shadowBlur=0;
 
@@ -11554,6 +11624,68 @@ var SAGE = (function(){
     removePhoto:removePhoto, preview:preview, export:doExport, savePng:savePng, state:state,
   };
 
+})();
+
+/* ── TOP10 ITEM IMAGES: uploads + Pexels auto-fetch + Ken Burns ── */
+var T10_POOL={};
+function coverKB(g,im,W,H,p,seed){
+  var r=Math.max(W/im.width,H/im.height)*(1.1-0.06*Math.min(p,1));
+  var dw=im.width*r,dh=im.height*r;
+  var dx=(W-dw)/2+(prand(seed*11)*2-1)*W*.02*p;
+  var dy=(H-dh)/2+(prand(seed*17)*2-1)*W*.02*p;
+  g.drawImage(im,dx,dy,dw,dh);
+  var sc=g.createLinearGradient(0,0,0,H);
+  sc.addColorStop(0,'rgba(5,5,10,.72)');sc.addColorStop(.45,'rgba(5,5,10,.4)');sc.addColorStop(1,'rgba(5,5,10,.82)');
+  g.fillStyle=sc;g.fillRect(0,0,W,H);
+}
+window.T10IMG=(function(){
+  var uploads=[];
+  function status(m){var el=document.getElementById('vImgStatus');if(el)el.textContent=m;}
+  function saveKey(k){try{localStorage.setItem('wpse_px',JSON.stringify((k||'').trim()));}catch(e){}status(k?'🔑 Key saved (works in Story Engine too)':'Key cleared');}
+  function getKey(){try{var v=localStorage.getItem('wpse_px');return v?JSON.parse(v):'';}catch(e){return'';}}
+  function attach(fl){
+    uploads=[];T10_POOL={};
+    var files=Array.prototype.slice.call(fl||[]);
+    if(!files.length)return;
+    var done=0;
+    files.forEach(function(f2,i){
+      var rd=new FileReader();
+      rd.onload=function(){
+        var im=new Image();
+        im.onload=function(){uploads[i]=im;done++;if(done===files.length)status('📎 '+done+' attached — tap Load images');};
+        im.src=rd.result;
+      };
+      rd.readAsDataURL(f2);
+    });
+  }
+  async function load(){
+    T10_POOL={};
+    var items=(typeof vS!=='undefined'&&vS.items)?vS.items.filter(function(i2){return i2.name&&i2.name.trim();}):[];
+    if(!items.length){status('⚠ Fill in the list items first');return;}
+    var key=getKey();
+    var kEl=document.getElementById('vPxKey');if(kEl&&!kEl.value&&key)kEl.value=key;
+    for(var i=0;i<items.length;i++){
+      if(uploads[i]){T10_POOL[i]=uploads[i];continue;}
+      if(!key)continue;
+      try{
+        status('🔎 Fetching '+(i+1)+'/'+items.length+': '+items[i].name+'…');
+        var resp=await fetch('https://api.pexels.com/v1/search?query='+encodeURIComponent(items[i].name)+'&per_page=1&orientation=portrait',{headers:{Authorization:key}});
+        var data=await resp.json();
+        var url=data&&data.photos&&data.photos[0]&&(data.photos[0].src.large2x||data.photos[0].src.large);
+        if(url){
+          T10_POOL[i]=await new Promise(function(res){
+            var im=new Image();im.crossOrigin='anonymous';
+            im.onload=function(){res(im);};im.onerror=function(){res(null);};
+            im.src=url;
+          });
+        }
+      }catch(e){}
+    }
+    var n=0;for(var k2 in T10_POOL)if(T10_POOL[k2])n++;
+    status(n?('✅ '+n+'/'+items.length+' images ready — every item now gets its photo in preview & export'):'⚠ Nothing loaded — attach files or add a Pexels key');
+    try{if(typeof vRender==='function')vRender((typeof vS!=='undefined'&&vS.frame)||0);}catch(e){}
+  }
+  return {attach:attach,saveKey:saveKey,load:load};
 })();
 
 // ── EXPOSE TO WINDOW ──

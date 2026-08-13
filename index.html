@@ -4940,11 +4940,25 @@ async function doZipExport(cv,renderFn,totalFn,modeKey,progId,progLblId,statusId
   if(typeof JSZip==='undefined'){document.getElementById(statusId).innerHTML='⚠️ JSZip not loaded. Check your internet connection.';return;}
   setBusy(true);
   const tot=totalFn();
+
+  // MEMORY GUARD — every frame is held as base64 in RAM until the ZIP is built,
+  // so a long video can push past a gigabyte and get the tab killed mid-render.
+  // Cap the number of exported frames and widen the stride instead of skipping
+  // the export entirely. Result plays at a lower fps, which is fine for text
+  // cards and is reported to the user so they can match it in CapCut.
+  const MAX_ZIP_FRAMES=900;
+  let step=2;
+  while(Math.ceil(tot/step)>MAX_ZIP_FRAMES) step++;
+  const outFps=Math.max(1,Math.round(FPS/step));
+  const planned=Math.ceil(tot/step);
+
   const zip=new JSZip();
   const folder=zip.folder('frames');
   let n=0;
-  document.getElementById(statusId).textContent='⏳ Rendering frames...';
-  for(let f=0;f<tot;f+=2){
+  document.getElementById(statusId).innerHTML=
+    '⏳ Rendering '+planned+' frames at '+outFps+'fps'+
+    (step>2?' <span style="color:var(--gd)">(long video — frames thinned to protect memory)</span>':'')+'...';
+  for(let f=0;f<tot;f+=step){
     renderFn(f);
     const b64=cv.toDataURL('image/jpeg',.85).split(',')[1];
     folder.file('frame_'+String(n).padStart(5,'0')+'.jpg',b64,{base64:true});
@@ -4952,7 +4966,7 @@ async function doZipExport(cv,renderFn,totalFn,modeKey,progId,progLblId,statusId
     if(n%15===0){
       const pct=Math.round(f/tot*85);
       document.getElementById(progId).style.width=pct+'%';
-      document.getElementById(progLblId).textContent='Frame '+f+' of '+tot+'...';
+      document.getElementById(progLblId).textContent='Frame '+n+' of '+planned+'...';
       await new Promise(r=>setTimeout(r,0));
     }
   }
@@ -4970,7 +4984,7 @@ async function doZipExport(cv,renderFn,totalFn,modeKey,progId,progLblId,statusId
   const fname='walkingparadox-'+modeKey+'-'+date+'.zip';
   setBusy(false);
   document.getElementById(progId).style.width='100%';
-  document.getElementById(progLblId).textContent='✅ Done! '+n+' frames exported.';
+  document.getElementById(progLblId).textContent='✅ Done! '+n+' frames at '+outFps+'fps.';
 
   if(IS_IOS){
     // iOS: try native share sheet first (most reliable)
@@ -5154,6 +5168,21 @@ async function doMp4Export(cv,renderFn,totalFn,modeKey,progId,progLblId,statusId
 
     for(var i=0; i<total; i++){
       renderFn(i);
+
+      // BACKPRESSURE — the encoder drains slower than we can push frames at it.
+      // Without this we queue every frame at once and the browser gets killed
+      // partway through on long videos. Wait for the queue to drain first.
+      if(encoder.encodeQueueSize > 10){
+        statusEl.textContent='Encoding frame '+(i+1)+' / '+total+'...';
+        if(progEl) progEl.style.width=Math.round((i/total)*85)+'%';
+        if(progLbl) progLbl.textContent=Math.round((i/total)*100)+'%';
+        var _guard=0;
+        while(encoder.encodeQueueSize > 10 && _guard < 2000){
+          await new Promise(function(r){setTimeout(r,8);});
+          _guard++;
+          if(encodeErr) throw encodeErr;
+        }
+      }
 
       var vf = new VideoFrame(cv, {
         timestamp: i * (1000000 / FPS),
@@ -8130,8 +8159,20 @@ const DYK = (() => {
     var el=document.getElementById('dykTotalTime');
     if(el){
       var secs=(total()/FPS_DYK);
-      el.textContent='⏱ Total video: '+secs.toFixed(1)+'s  ·  '+
+      var txt='⏱ Total video: '+secs.toFixed(1)+'s  ·  '+
         state.facts.length+' fact'+(state.facts.length===1?'':'s');
+      // Long videos are both bad for reach and heavy to export, so say so here
+      // rather than letting the export fall over later.
+      if(secs>90){
+        el.style.color='#ff6b7d';
+        txt+='  ⚠️ very long — exports get heavy, and Reels/TikTok drop off hard past ~60s';
+      } else if(secs>60){
+        el.style.color='#ffa040';
+        txt+='  ⚠️ over 60s — consider trimming';
+      } else {
+        el.style.color='var(--gd)';
+      }
+      el.textContent=txt;
     }
     var wrap=document.getElementById('dykSliderWrap');
     if(wrap)wrap.style.opacity=state.autoTime?'.4':'1';

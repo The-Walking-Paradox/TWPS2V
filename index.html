@@ -3153,11 +3153,29 @@ min-height:48px;}
       </div>
 
       <div>
-        <div class="sec-lbl">Seconds per fact</div>
-        <div class="t-chips">
-          <div class="t-chip"   id="dykSpd3" onclick="DYK.setSpeed(3)">3s</div>
-          <div class="t-chip on" id="dykSpd4" onclick="DYK.setSpeed(4)">4s</div>
-          <div class="t-chip"   id="dykSpd5" onclick="DYK.setSpeed(5)">5s</div>
+        <div class="sec-lbl">Timing</div>
+        <div class="t-chips" style="margin-bottom:8px">
+          <div class="t-chip"    id="dykSpd3"    onclick="DYK.setSpeed(3)">3s</div>
+          <div class="t-chip on" id="dykSpd4"    onclick="DYK.setSpeed(4)">4s</div>
+          <div class="t-chip"    id="dykSpd5"    onclick="DYK.setSpeed(5)">5s</div>
+          <div class="t-chip"    id="dykSpdAuto" onclick="DYK.setAutoTime(true)">✨ Auto</div>
+        </div>
+
+        <div id="dykSliderWrap">
+          <label class="lbl">Custom — <span id="dykSpdVal">4s</span> per fact</label>
+          <div class="slider-row">
+            <span style="font-size:11px;color:var(--t3)">2s</span>
+            <input type="range" id="dykSpdSlider" min="2" max="20" value="4" step="0.5"
+              oninput="DYK.setSpeed(+this.value)"/>
+            <span style="font-size:11px;color:var(--t3)">20s</span>
+          </div>
+        </div>
+
+        <div id="dykTotalTime" style="font-size:11px;color:var(--gd);text-align:center;margin-top:8px;font-weight:600"></div>
+
+        <div style="margin-top:8px;font-size:10px;color:var(--t3);line-height:1.7;padding:9px 11px;background:var(--lift);border-radius:7px">
+          <strong style="color:var(--gd)">✨ Auto</strong> gives each fact its own time based on how long it is — short facts stay snappy, long ones get room to read.<br>
+          You can also override any single fact using the <strong>⏱ this fact</strong> box on its card above.
         </div>
       </div>
 
@@ -7787,16 +7805,45 @@ const DYK = (() => {
       { text: 'The national flag of Nepal is the only non-rectangular flag in the world', emoji: '🚩' },
       { text: 'Nepal was never colonized - it is one of the few countries in Asia to remain independent', emoji: '🦅' },
     ],
-    speed: 4,      // seconds per fact
+    speed: 4,          // seconds per fact (used when autoTime is off)
+    autoTime: false,   // when true, each fact gets time based on its own length
     exportMethod: 'zip',
     playing: false, frame: 0, raf: null, busy: false,
   };
 
   const FPS_DYK = 60;
+
+  // ── PER-FACT TIMING ──
+  // Facts are no longer assumed to take equal time. factDur() returns the
+  // seconds for one fact; the cumulative offset table below lets the renderer
+  // find which fact is on screen at any frame.
+  const DYK_MIN_S = 2, DYK_MAX_S = 20;
+  function factDur(i){
+    const f = state.facts[i];
+    if(!f) return state.speed;
+    // Explicit per-fact override always wins
+    if(f.secs && +f.secs > 0) return Math.min(DYK_MAX_S, Math.max(DYK_MIN_S, +f.secs));
+    if(!state.autoTime) return state.speed;
+    // Auto: ~1.6s to register the card + reading time at ~16 chars/sec,
+    // then clamped. Long facts get room to breathe, short ones stay snappy.
+    const chars = (f.text || '').trim().length;
+    const est = 1.6 + chars / 16;
+    return Math.min(DYK_MAX_S, Math.max(DYK_MIN_S, Math.round(est * 2) / 2));
+  }
+  function factOffsets(){
+    // cumulative start time (seconds) of each fact, plus total run at the end
+    const out = [0];
+    for(let i = 0; i < state.facts.length; i++) out.push(out[i] + factDur(i));
+    return out;
+  }
+  function factsTotalSecs(){
+    const o = factOffsets();
+    return o[o.length - 1];
+  }
   function total() {
     const introF = Math.round(FPS_DYK * 1.5);
     const outroF = Math.round(FPS_DYK * 2);
-    return introF + state.facts.length * state.speed * FPS_DYK + outroF;
+    return introF + Math.round(factsTotalSecs() * FPS_DYK) + outroF;
   }
 
   // ── PALETTES ──
@@ -7870,7 +7917,7 @@ const DYK = (() => {
 
     const T = frame / FPS_DYK;
     const introLen = 1.5;
-    const outroStart = introLen + state.facts.length * state.speed;
+    const outroStart = introLen + factsTotalSecs();
 
     // ── INTRO PHASE ──
     if(T < introLen) {
@@ -7926,8 +7973,14 @@ const DYK = (() => {
 
     // ── FACTS PHASE ──
     const elapsed = T - introLen;
-    const factIdx = Math.min(state.facts.length-1, Math.floor(elapsed/state.speed));
-    const factT = elapsed - factIdx*state.speed; // time within this fact (0 to speed)
+    // Walk the cumulative offset table — facts can each have a different length
+    const offs = factOffsets();
+    let factIdx = 0;
+    for(let i = 0; i < state.facts.length; i++){
+      if(elapsed >= offs[i]) factIdx = i; else break;
+    }
+    const thisDur = factDur(factIdx);
+    const factT = clamp(elapsed - offs[factIdx], 0, thisDur); // time within this fact
     const fact = state.facts[factIdx] || {text:'',emoji:'💡'};
 
     sharedDrawBrand(g,W,H,1);
@@ -7948,7 +8001,7 @@ const DYK = (() => {
       g.globalAlpha=1;
       // Active dot fill by progress
       if(isActive) {
-        const prog = factT/state.speed;
+        const prog = thisDur > 0 ? factT/thisDur : 0;
         g.beginPath(); g.arc(dx, H*.14, dotR, -Math.PI/2, -Math.PI/2+Math.PI*2*prog);
         g.strokeStyle=pal.accentRed; g.lineWidth=Math.max(2,W*.003);
         g.stroke();
@@ -7957,7 +8010,7 @@ const DYK = (() => {
 
     // Fact number
     const enterP = ease(clamp(factT/0.4,0,1));
-    const exitP  = ease(clamp((factT-(state.speed-0.4))/0.4,0,1));
+    const exitP  = ease(clamp((factT-(thisDur-0.4))/0.4,0,1));
     const fadeA  = enterP * (1-exitP);
 
     g.save(); g.globalAlpha=fadeA;
@@ -8032,12 +8085,60 @@ const DYK = (() => {
   }
 
   function setSpeed(s){
-    state.speed=s;
+    s = Math.min(DYK_MAX_S, Math.max(DYK_MIN_S, +s || 4));
+    state.speed = s;
+    state.autoTime = false;
+    // preset chips light up only when the slider sits exactly on them
     [3,4,5].forEach(k=>{
       var el=document.getElementById('dykSpd'+k);
       if(el)el.classList.toggle('on',k===s);
     });
+    var auto=document.getElementById('dykSpdAuto');
+    if(auto)auto.classList.remove('on');
+    var sl=document.getElementById('dykSpdSlider');   if(sl)sl.value=s;
+    var lb=document.getElementById('dykSpdVal');      if(lb)lb.textContent=s+'s';
+    syncTimeUI();
     render(0);
+  }
+
+  function setAutoTime(on){
+    state.autoTime = !!on;
+    var auto=document.getElementById('dykSpdAuto');
+    if(auto)auto.classList.toggle('on',state.autoTime);
+    if(state.autoTime){
+      [3,4,5].forEach(k=>{
+        var el=document.getElementById('dykSpd'+k);
+        if(el)el.classList.remove('on');
+      });
+    }
+    syncTimeUI();
+    buildFacts();
+    render(0);
+  }
+
+  function setFactSecs(i,v){
+    if(!state.facts[i])return;
+    v=(''+v).trim();
+    if(!v){ delete state.facts[i].secs; }
+    else { state.facts[i].secs=Math.min(DYK_MAX_S,Math.max(DYK_MIN_S,+v||DYK_MIN_S)); }
+    syncTimeUI();
+    render(state.frame);
+  }
+
+  // Keeps the "total run time" readout and per-fact hints honest
+  function syncTimeUI(){
+    var el=document.getElementById('dykTotalTime');
+    if(el){
+      var secs=(total()/FPS_DYK);
+      el.textContent='⏱ Total video: '+secs.toFixed(1)+'s  ·  '+
+        state.facts.length+' fact'+(state.facts.length===1?'':'s');
+    }
+    var wrap=document.getElementById('dykSliderWrap');
+    if(wrap)wrap.style.opacity=state.autoTime?'.4':'1';
+    state.facts.forEach(function(_,i){
+      var h=document.getElementById('dykFactSecs'+i);
+      if(h)h.placeholder=factDur(i)+'s';
+    });
   }
 
   function buildFacts(){
@@ -8052,11 +8153,26 @@ const DYK = (() => {
         '<input style="width:40px;text-align:center;font-size:18px;background:none;border:none;color:var(--t1)" value="'+(fact.emoji||'💡')+'" oninput="DYK.state.facts['+i+'].emoji=this.value;DYK.render(DYK.state.frame)"/>'+
         '</div>'+
         '<div class="item-fields">'+
-        '<textarea class="fi" rows="2" style="resize:none" placeholder="Your fact here..." oninput="DYK.state.facts['+i+'].text=this.value;DYK.render(DYK.state.frame)">'+esc(fact.text)+'</textarea>'+
+        '<textarea class="fi" rows="2" style="resize:none" placeholder="Your fact here..." oninput="DYK.state.facts['+i+'].text=this.value;DYK.onFactText()">'+esc(fact.text)+'</textarea>'+
+        '<div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+
+          '<span style="font-size:10px;color:var(--t3);white-space:nowrap">⏱ this fact</span>'+
+          '<input id="dykFactSecs'+i+'" class="fi" type="number" min="'+DYK_MIN_S+'" max="'+DYK_MAX_S+'" step="0.5" '+
+            'style="width:70px;padding:6px 8px;font-size:11px;min-height:0" '+
+            'value="'+(fact.secs?fact.secs:'')+'" placeholder="'+factDur(i)+'s" '+
+            'oninput="DYK.setFactSecs('+i+',this.value)"/>'+
+          '<span style="font-size:10px;color:var(--t3)">leave blank = use default</span>'+
+        '</div>'+
         '</div>'+
         (state.facts.length>1?'<button class="item-del-btn" onclick="DYK.deleteFact('+i+')">✕</button>':'');
       el.appendChild(card);
     });
+    syncTimeUI();
+  }
+
+  // Typing in a fact changes its auto-duration, so refresh the readout
+  function onFactText(){
+    syncTimeUI();
+    render(state.frame);
   }
 
   function update(){
@@ -8136,6 +8252,9 @@ const DYK = (() => {
     buildFacts();
     var t=document.getElementById('dykTitle');
     if(t)t.value=state.title;
+    var sl=document.getElementById('dykSpdSlider'); if(sl)sl.value=state.speed;
+    var lb=document.getElementById('dykSpdVal');    if(lb)lb.textContent=state.speed+'s';
+    syncTimeUI();
     render(0);
     buildTypoPanel('dykTypoPanel',state,render);WP.log('info','DYK initialized');
   }
@@ -8144,6 +8263,7 @@ const DYK = (() => {
 
   return {
     init,resize,render,preview,setFmt,setStyle,setSpeed,
+    setAutoTime,setFactSecs,onFactText,syncTimeUI,factDur,
     update,addFact,deleteFact,buildFacts,screenRecord,
     export:doExport,
     state,
